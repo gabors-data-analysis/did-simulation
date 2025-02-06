@@ -49,10 +49,21 @@ ui <- fluidPage(
     mainPanel(
       plotlyOutput("did_plot"),
       verbatimTextOutput("model_results"),
-      textOutput("warning_message")
+      textOutput("warning_message"),
+      
+      # Fixed Effects Visualization Below
+      hr(),
+      h3("Understanding Fixed Effects"),
+      checkboxInput("apply_country_fe", "Apply Country Fixed Effects", FALSE),
+      checkboxInput("apply_year_fe", "Apply Year Fixed Effects", FALSE),
+      actionButton("reset_fe", "Reset"),
+      helpText("Toggle the checkboxes to see how Fixed Effects adjust the data."),
+      plotlyOutput("fe_plot"),
+      helpText("\nCountry FE removes baseline differences across countries. \nYear FE removes common trends. \nTWFE applies both.")
     )
   )
 )
+
 
 # Server logic
 server <- function(input, output, session) {
@@ -66,6 +77,22 @@ server <- function(input, output, session) {
       ))
     }
   })
+  
+  
+  # Server logic
+server <- function(input, output, session) {
+  
+  observe({
+    if (input$year_fe & input$timing == "once" & !input$global_trend & !input$individual_trend) {
+      showModal(modalDialog(
+        title = "Warning",
+        "For uniformly timed single intervention and no global or individual trends, time dummies can not be added.",
+        easyClose = TRUE
+      ))
+    }
+  })
+
+  
   
   # Generate dataset based on inputs
   generate_data <- reactive({
@@ -169,6 +196,36 @@ server <- function(input, output, session) {
     etable(twfe_model, fd_model, event_model)
   })
 }
+
+
+
+output$fe_plot <- renderPlotly({
+  data <- generate_data()
+  
+  if (input$apply_country_fe) {
+    data <- data %>% group_by(country) %>% mutate(value = value - mean(value))
+  }
+  
+  if (input$apply_year_fe) {
+    data <- data %>% group_by(year) %>% mutate(value = value - mean(value))
+  }
+  
+  p <- ggplot(data, aes(x = year, y = value, color = country, group = country)) +
+    geom_line() +
+    geom_point() +
+    theme_minimal() +
+    labs(title = "Fixed Effects Adjustment", x = "Year", y = "Sales of Sugary Drinks")
+  
+  ggplotly(p)
+})
+
+observeEvent(input$reset_fe, {
+  updateCheckboxInput(session, "apply_country_fe", value = FALSE)
+  updateCheckboxInput(session, "apply_year_fe", value = FALSE)
+})
+}
+
+
 
 # Run the app
 shinyApp(ui = ui, server = server)
