@@ -1,5 +1,3 @@
-# install.packages(c("shiny", "tidyverse", "did", "fixest", "plotly"))
-
 # Install and load required packages
 # install.packages(c("shiny", "tidyverse", "did", "fixest", "plotly"))
 library(shiny)
@@ -125,7 +123,9 @@ server <- function(input, output, session) {
         rel_time = case_when(
           country %in% LETTERS[1:4] ~ year - treat_years[match(country, LETTERS[1:4])],
           TRUE ~ 0
-        )
+        ),
+        # Add numeric country identifier for did package
+        country_id = match(country, LETTERS)
       )
     
     return(data)
@@ -164,21 +164,50 @@ server <- function(input, output, session) {
     # CS DiD model
     cs_model <- att_gt(
       yname = "value",
-      gname = "country",
+      gname = "country_id",
       tname = "year",
-      idname = "country",
+      idname = "country_id",
       data = data %>% filter(country != "E" & country != "F"),
       control_group = "nevertreated"
     )
     
-    # Print results
-    cat("TWFE Model Results:\n")
+    # Create formatted table output
+    results_table <- data.frame(
+      Model = c("TWFE", "First Difference", "CS DiD"),
+      Estimate = c(
+        coef(twfe_model)["treated:post"],
+        coef(fd_model)["treated:post"],
+        mean(cs_model$att)
+      ),
+      SE = c(
+        sqrt(vcov(twfe_model)["treated:post", "treated:post"]),
+        sqrt(vcov(fd_model)["treated:post", "treated:post"]),
+        mean(cs_model$se)
+      )
+    )
+    
+    results_table$CI_Lower <- results_table$Estimate - 1.96 * results_table$SE
+    results_table$CI_Upper <- results_table$Estimate + 1.96 * results_table$SE
+    
+    # Format numbers
+    results_table <- results_table %>%
+      mutate(across(where(is.numeric), ~round(., 2)))
+    
+    # Print formatted table
+    print(knitr::kable(results_table, 
+                       format = "pipe",
+                       col.names = c("Model", "Estimate", "Std. Error", "CI Lower", "CI Upper"),
+                       align = c('l', 'r', 'r', 'r', 'r')))
+    
+    # Print detailed results
+    cat("\nDetailed Model Results:\n")
+    cat("\nTWFE Model:\n")
     print(summary(twfe_model))
     
-    cat("\nFirst Difference Model Results:\n")
+    cat("\nFirst Difference Model:\n")
     print(summary(fd_model))
     
-    cat("\nCallaway & Sant'Anna DiD Results:\n")
+    cat("\nCallaway & Sant'Anna DiD:\n")
     print(summary(cs_model))
   })
 }
