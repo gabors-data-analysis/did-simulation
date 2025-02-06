@@ -89,9 +89,13 @@ server <- function(input, output, session) {
         country_num = as.numeric(factor(country)),  # Numeric country identifier
         base_value = rep(base_values, each = length(years)),
         value = base_value,
-        group = case_when(
-          country %in% c("E", "F") ~ 0,  # Control group
-          TRUE ~ country_num  # Treatment groups 1-4
+        # First treatment time (0 if never treated)
+        first_treat = case_when(
+          country %in% c("E", "F") ~ 0,  # Never treated
+          country == "A" ~ treat_years[1],
+          country == "B" ~ treat_years[2],
+          country == "C" ~ treat_years[3],
+          country == "D" ~ treat_years[4]
         )
       )
     
@@ -164,11 +168,11 @@ server <- function(input, output, session) {
     # CS DiD model
     cs_model <- att_gt(
       yname = "value",
-      gname = "group",  # Use the group variable (0 for control, 1-4 for treated)
+      gname = "first_treat",  # Time of first treatment (0 for never treated)
       tname = "year",
-      idname = "country",
+      idname = "country_num",
       data = data,
-      control_group = "nevertreated"
+      control_group = "notyettreated"  # Changed from nevertreated due to small sample
     )
     
     # Create formatted table
