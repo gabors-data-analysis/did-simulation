@@ -11,7 +11,6 @@ ui <- fluidPage(
   
   sidebarLayout(
     sidebarPanel(
-      # Main controls
       radioButtons("timing", "Treatment Timing:",
                    choices = c("Simultaneous" = "once",
                                "Staggered" = "staggered")),
@@ -25,10 +24,8 @@ ui <- fluidPage(
       checkboxInput("individual_trend", "Include individual trends", FALSE),
       checkboxInput("year_fe", "Include Year Fixed Effects", FALSE),
       
-      # Advanced settings button
       actionButton("show_advanced", "Show Advanced Settings"),
       
-      # Advanced settings panel (initially hidden)
       conditionalPanel(
         condition = "input.show_advanced % 2 == 1",
         numericInput("base_a", "Base value Country A:", 1000),
@@ -64,8 +61,7 @@ ui <- fluidPage(
   )
 )
 
-
-  # Server logic
+# Server logic
 server <- function(input, output, session) {
   
   observe({
@@ -77,17 +73,14 @@ server <- function(input, output, session) {
       ))
     }
   })
-
   
-  
-  # Generate dataset based on inputs
   generate_data <- reactive({
     years <- 2010:2020
     countries <- LETTERS[1:6]
     base_values <- c(input$base_a, input$base_b, input$base_c, 
                      input$base_d, input$base_e, input$base_f)
     
-    # Treatment timing
+    # Define treatment timing
     if (input$timing == "once") {
       treat_timing <- rep(2015, 4)
     } else {
@@ -95,7 +88,7 @@ server <- function(input, output, session) {
     }
     first_treat <- min(treat_timing)
     
-    # Set up treatment effects
+    # Define treatment effects
     if (input$effect_size == "uniform") {
       effects <- rep(input$uniform_effect, 4)
     } else {
@@ -105,57 +98,7 @@ server <- function(input, output, session) {
       }
     }
     
-    # Create base dataset
     data <- expand.grid(year = years, country = countries) %>%
-      arrange(country, year) %>%
-      mutate(
-        base_value = rep(base_values, each = length(years)),
-        value = base_value,
-        treated = country %in% LETTERS[1:4]
-      )
-    
-    # Add global trend if selected
-    if (input$global_trend) {
-      data <- data %>%
-        mutate(value = value + input$global_trend_size * (year - min(year)))
-    }
-    
-    # Add individual trends if selected
-    if (input$individual_trend) {
-      ind_trends <- as.numeric(strsplit(input$individual_trends, ",")[[1]])
-      data <- data %>%
-        group_by(country) %>%
-        mutate(
-          trend_value = ind_trends[match(country, LETTERS[1:6])] * (year - min(year)),
-          value = value + trend_value
-        ) %>%
-        ungroup()
-    }
-    
-    # Add treatment effects and timing variables
-    data <- data %>%
-      mutate(
-        post = case_when(
-          country == "A" ~ year >= treat_timing[1],
-          country == "B" ~ year >= treat_timing[2],
-          country == "C" ~ year >= treat_timing[3],
-          country == "D" ~ year >= treat_timing[4],
-          TRUE ~ FALSE
-        ),
-        event_time = year - ifelse(treated, first_treat, Inf),
-        post_event = event_time >= 0 & treated,
-        treatment_fd = case_when(
-          post & year == treat_timing[match(country, LETTERS[1:4])] ~ 1,
-          TRUE ~ 0
-        ),
-        effect = case_when(
-          country %in% LETTERS[1:4] & post ~ effects[match(country, LETTERS[1:4])],
-          TRUE ~ 0
-        ),
-        value = value + effect
-      )
-
-        data <- expand.grid(year = years, country = countries) %>%
       arrange(country, year) %>%
       mutate(
         base_value = rep(base_values, each = length(years)),
@@ -174,8 +117,6 @@ server <- function(input, output, session) {
     
     return(data)
   })
-
-
   
   output$did_plot <- renderPlotly({
     data <- generate_data()
@@ -186,48 +127,6 @@ server <- function(input, output, session) {
       labs(title = "Treatment Effects Over Time", x = "Year", y = "Sales of Sugary Drinks")
     ggplotly(p)
   })
-  
-  output$model_results <- renderPrint({
-    data <- generate_data()
-    fd_data <- data %>% group_by(country) %>%
-      mutate(value_diff = value - lag(value), treatment_fd_diff = treatment_fd - lag(treatment_fd))     %>% filter(!is.na(value_diff) | !is.na(treatment_fd_diff))
-    
-    fe_formula <- if (input$year_fe) "| country + year" else "| country"
-    fd_formula <- if (input$year_fe) "| year" else " "
-    twfe_model <- feols(as.formula(paste("value ~ treated:post", fe_formula)), data = data)
-    fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd_diff", fd_formula)), data = fd_data)
-    event_model <- feols(as.formula(paste("value ~ treated:post_event", fe_formula)), data = data)
-    etable(twfe_model, fd_model, event_model)
-  })
-
-
-output$fe_plot <- renderPlotly({
-  data <- generate_data()
-  
-  if (input$apply_country_fe) {
-    data <- data %>% group_by(country) %>% mutate(value = value - mean(value))
-  }
-  
-  if (input$apply_year_fe) {
-    data <- data %>% group_by(year) %>% mutate(value = value - mean(value))
-  }
-  
-  p <- ggplot(data, aes(x = year, y = value, color = country, group = country)) +
-    geom_line() +
-    geom_point() +
-    theme_minimal() +
-    labs(title = "Fixed Effects Adjustment", x = "Year", y = "Sales of Sugary Drinks")
-  
-  ggplotly(p)
-})
-
-observeEvent(input$reset_fe, {
-  updateCheckboxInput(session, "apply_country_fe", value = FALSE)
-  updateCheckboxInput(session, "apply_year_fe", value = FALSE)
-})
 }
 
-
-
-# Run the app
 shinyApp(ui = ui, server = server)
