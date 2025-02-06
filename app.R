@@ -136,21 +136,23 @@ server <- function(input, output, session) {
     # Add treatment effects and timing variables
     data <- data %>%
       mutate(
-        post = case_when(
-          country == "A" ~ year >= treat_timing[1],
-          country == "B" ~ year >= treat_timing[2],
-          country == "C" ~ year >= treat_timing[3],
-          country == "D" ~ year >= treat_timing[4],
-          TRUE ~ FALSE
+        cohort = case_when(
+          country == "A" ~ treat_timing[1],
+          country == "B" ~ treat_timing[2],
+          country == "C" ~ treat_timing[3],
+          country == "D" ~ treat_timing[4],
+          TRUE ~ Inf
         ),
-        event_time = year - ifelse(treated, first_treat, Inf),
-        post_event = event_time >= 0 & treated,
+        relative_time = year - cohort,
+        post = !is.infinite(cohort) & year >= cohort,
+        event_time = relative_time,
+        post_event = !is.infinite(cohort) & relative_time >= 0,
         treatment_fd = case_when(
-          post & year == treat_timing[match(country, LETTERS[1:4])] ~ 1,
+          post & year == cohort ~ 1,
           TRUE ~ 0
         ),
         effect = case_when(
-          country %in% LETTERS[1:4] & post ~ effects[match(country, LETTERS[1:4])],
+          post ~ effects[match(country, LETTERS[1:4])],
           TRUE ~ 0
         ),
         value = value + effect
@@ -158,8 +160,8 @@ server <- function(input, output, session) {
     
     return(data)
   })
-  
-  
+    
+    
   output$did_plot <- renderPlotly({
     data <- generate_data()
     p <- ggplot(data, aes(x = year, y = value, color = country, group = country)) +
@@ -170,21 +172,61 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
+  
+
+# In the server function:
   output$model_results <- renderPrint({
     data <- generate_data()
-    fd_data <- data %>% group_by(country) %>%
-      mutate(value_diff = value - lag(value), treatment_fd_diff = treatment_fd - lag(treatment_fd))     %>% filter(!is.na(value_diff) | !is.na(treatment_fd_diff))
     
-    fe_formula <- if (input$year_fe) "| country + year" else "| country"
-    fd_formula <- if (input$year_fe) "| year" else " "
-    twfe_model <- feols(as.formula(paste("value ~ treated:post", fe_formula)), data = data)
-    fd_data <- data %>% group_by(country) %>% mutate(value_diff = value - lag(value), treatment_fd_diff = treatment_fd - lag(treatment_fd)) %>% filter(!is.na(value_diff))
-    fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd_diff", fe_formula)), data = fd_data)
-    fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd_diff", fd_formula)), data = fd_data)
-    event_model <- feols(value ~ i(event_time, treated, ref = -1) | country + year, data = data)
-    etable(twfe_model, fd_model, event_model)
+    # First difference data preparation
+    fd_data <- data %>% 
+      group_by(country) %>%
+      mutate(
+        value_diff = value - lag(value),
+        treatment_fd_diff = treatment_fd - lag(treatment_fd)
+      ) %>% 
+      filter(!is.na(value_diff))
+    
+    # Model formulas
+    fe_formula <- if(input$year_fe) "| country + year" else "| country"
+    fd_formula <- if(input$year_fe) "| year" else ""
+    
+    # TWFE model
+    twfe_model <- feols(as.formula(paste("value ~ treated:post", fe_formula)), 
+                        data = data,
+                        cluster = "country")
+    
+    # First difference model
+    fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd_diff", fd_formula)),
+                      data = fd_data,
+                      cluster = "country")
+    
+    # Event study dataset
+    data_event <- data %>%
+      mutate(
+        rel_year = factor(
+          case_when(
+            relative_time < -5 ~ "-5+",
+            relative_time > 5 ~ "5+",
+            TRUE ~ as.character(relative_time)
+          ),
+          levels = c("-5+", as.character(-4:5), "5+")
+        )
+      ) %>%
+      filter(!is.infinite(cohort) | is.infinite(relative_time))
+    
+    # Event study model
+    event_model <- feols(
+      value ~ i(rel_year, ref = "-1") | country + year,
+      cluster = "country",
+      data = data_event
+    )
+    
+    # Print all results
+    etable(twfe_model, fd_model, event_model,
+           headers = c("TWFE", "First Difference", "Event Study"),
+           cluster = "country")
   })
 }
-
 # Run the app
 shinyApp(ui = ui, server = server)
