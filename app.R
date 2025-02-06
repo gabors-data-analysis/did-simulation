@@ -1,5 +1,4 @@
 # Install and load required packages
-# install.packages(c("shiny", "tidyverse", "did", "fixest", "plotly"))
 library(shiny)
 library(tidyverse)
 library(did)
@@ -38,7 +37,7 @@ ui <- fluidPage(
         numericInput("base_e", "Base value Country E:", 3000),
         numericInput("base_f", "Base value Country F:", 6000),
         numericInput("uniform_effect", "Uniform effect size:", -1000),
-        textInput("hetero_effects", "Heterogeneous effects (comma-separated, first 4 used):", 
+        textInput("hetero_effects", "Heterogeneous effects (comma-separated):", 
                   "-500,-1500,-500,-1500"),
         numericInput("global_trend_size", "Global trend increment:", 100),
         textInput("individual_trends", "Individual trends (comma-separated):", 
@@ -61,81 +60,72 @@ server <- function(input, output, session) {
     # Base parameters
     years <- 2010:2020
     countries <- LETTERS[1:6]
-    
-    # Treatment timing
-    if (input$timing == "once") {
-      treat_years <- rep(2015, 4)
-    } else {
-      treat_years <- c(2013, 2014, 2016, 2017)
-    }
-    
-    # Base values
     base_values <- c(input$base_a, input$base_b, input$base_c, 
                      input$base_d, input$base_e, input$base_f)
     
-    # Treatment effects - ensure length 6 with zeros for control units
-    if (input$effect_size == "uniform") {
-      effects <- c(rep(input$uniform_effect, 4), 0, 0)  # 4 treated + 2 control
+    # Set up treatment timing
+    if (input$timing == "once") {
+      treat_years <- c(rep(2015, 4), 0, 0)  # Last two are control units
     } else {
-      effects <- as.numeric(strsplit(input$hetero_effects, ",")[[1]])
-      if (length(effects) < 4) {
-        effects <- c(effects, rep(0, 4 - length(effects)))  # Pad treatment effects if needed
-      }
+      treat_years <- c(2013, 2014, 2016, 2017, 0, 0)  # Last two are control units
+    }
+    
+    # Set up treatment effects
+    if (input$effect_size == "uniform") {
+      effects <- c(rep(input$uniform_effect, 4), 0, 0)
+    } else {
+      effects <- numeric(6)  # Initialize with zeros
+      het_effects <- as.numeric(strsplit(input$hetero_effects, ",")[[1]])
+      effects[1:4] <- if(length(het_effects) >= 4) het_effects[1:4] else c(het_effects, rep(0, 4-length(het_effects)))
       if (input$early_smaller) {
-        effects <- sort(effects)
+        effects[1:4] <- sort(effects[1:4])
       }
-      effects <- c(effects[1:4], 0, 0)  # Ensure exactly 6 elements with zeros for controls
     }
     
     # Create base dataset
     data <- expand.grid(year = years, country = countries) %>%
       arrange(country, year) %>%
       mutate(
+        country_num = as.numeric(factor(country)),  # Numeric country identifier
         base_value = rep(base_values, each = length(years)),
-        value = base_value
+        value = base_value,
+        group = case_when(
+          country %in% c("E", "F") ~ 0,  # Control group
+          TRUE ~ country_num  # Treatment groups 1-4
+        )
       )
     
-    # Add trends
+    # Add global trend if selected
     if (input$global_trend) {
       data <- data %>%
-        group_by(country) %>%
         mutate(value = value + input$global_trend_size * (year - min(year)))
     }
     
+    # Add individual trends if selected
     if (input$individual_trend) {
-      ind_trends <- as.numeric(strsplit(input$individual_trends, ",")[[1]])
+      ind_trends <- numeric(6)  # Initialize with zeros
+      input_trends <- as.numeric(strsplit(input$individual_trends, ",")[[1]])
+      ind_trends[1:length(input_trends)] <- input_trends
+      
       data <- data %>%
-        group_by(country) %>%
-        mutate(value = value + rep(ind_trends, each = length(years)) * (year - min(year)))
+        mutate(value = value + ind_trends[country_num] * (year - min(year)))
     }
     
     # Add treatment effects
-    for(i in 1:4) {
+    for(i in 1:4) {  # Only first 4 countries get treatment
       data <- data %>%
         mutate(
-          value = ifelse(country == LETTERS[i] & year >= treat_years[i],
+          value = ifelse(country == LETTERS[i] & year >= treat_years[i] & treat_years[i] > 0,
                          value + effects[i],
                          value)
         )
     }
     
-    # Add treatment indicators
+    # Add indicators for different models
     data <- data %>%
       mutate(
-        # For treated units, use their treatment year, for control units use Inf
-        treat_year = case_when(
-          country %in% LETTERS[1:4] ~ as.numeric(treat_years[match(country, LETTERS[1:4])]),
-          TRUE ~ Inf  # Control units (E and F) get Inf as their treatment year
-        ),
-        # Add numeric country identifier for did package
-        country_id = match(country, LETTERS),
-        # Other indicators
         treated = country %in% LETTERS[1:4],
-        post = year >= 2015,
-        rel_time = case_when(
-          country %in% LETTERS[1:4] ~ year - treat_years[match(country, LETTERS[1:4])],
-          TRUE ~ 0
-        )
+        post = year >= 2015
       )
     
     return(data)
@@ -174,15 +164,14 @@ server <- function(input, output, session) {
     # CS DiD model
     cs_model <- att_gt(
       yname = "value",
-      gname = "g",
+      gname = "group",  # Use the group variable (0 for control, 1-4 for treated)
       tname = "year",
       idname = "country",
       data = data,
-      control_group = "nevertreated",
-      anticipation = 0
+      control_group = "nevertreated"
     )
     
-    # Create formatted table output
+    # Create formatted table
     results_table <- data.frame(
       Model = c("TWFE", "First Difference", "CS DiD"),
       Estimate = c(
@@ -205,13 +194,13 @@ server <- function(input, output, session) {
       mutate(across(where(is.numeric), ~round(., 2)))
     
     # Print formatted table
+    cat("Summary of Results:\n\n")
     print(knitr::kable(results_table, 
                        format = "pipe",
-                       col.names = c("Model", "Estimate", "Std. Error", "CI Lower", "CI Upper"),
-                       align = c('l', 'r', 'r', 'r', 'r')))
+                       col.names = c("Model", "Estimate", "Std. Error", "CI Lower", "CI Upper")))
     
     # Print detailed results
-    cat("\nDetailed Model Results:\n")
+    cat("\n\nDetailed Model Results:\n")
     cat("\nTWFE Model:\n")
     print(summary(twfe_model))
     
