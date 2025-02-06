@@ -1,7 +1,6 @@
 # Install and load required packages
 library(shiny)
 library(tidyverse)
-library(did)
 library(fixest)
 library(plotly)
 
@@ -63,18 +62,18 @@ server <- function(input, output, session) {
     base_values <- c(input$base_a, input$base_b, input$base_c, 
                      input$base_d, input$base_e, input$base_f)
     
-    # Set up treatment timing
+    # Treatment timing
     if (input$timing == "once") {
-      treat_years <- c(rep(2015, 4), 0, 0)  # Last two are control units
+      treat_timing <- rep(2015, 4)
     } else {
-      treat_years <- c(2013, 2014, 2016, 2017, 0, 0)  # Last two are control units
+      treat_timing <- c(2013, 2014, 2016, 2017)
     }
     
     # Set up treatment effects
     if (input$effect_size == "uniform") {
-      effects <- c(rep(input$uniform_effect, 4), 0, 0)
+      effects <- rep(input$uniform_effect, 4)
     } else {
-      effects <- numeric(6)  # Initialize with zeros
+      effects <- numeric(4)
       het_effects <- as.numeric(strsplit(input$hetero_effects, ",")[[1]])
       effects[1:4] <- if(length(het_effects) >= 4) het_effects[1:4] else c(het_effects, rep(0, 4-length(het_effects)))
       if (input$early_smaller) {
@@ -86,17 +85,9 @@ server <- function(input, output, session) {
     data <- expand.grid(year = years, country = countries) %>%
       arrange(country, year) %>%
       mutate(
-        country_num = as.numeric(factor(country)),  # Numeric country identifier
         base_value = rep(base_values, each = length(years)),
         value = base_value,
-        # First treatment time (0 if never treated)
-        first_treat = case_when(
-          country %in% c("E", "F") ~ 0,  # Never treated
-          country == "A" ~ treat_years[1],
-          country == "B" ~ treat_years[2],
-          country == "C" ~ treat_years[3],
-          country == "D" ~ treat_years[4]
-        )
+        treated = country %in% LETTERS[1:4]
       )
     
     # Add global trend if selected
@@ -107,29 +98,45 @@ server <- function(input, output, session) {
     
     # Add individual trends if selected
     if (input$individual_trend) {
-      ind_trends <- numeric(6)  # Initialize with zeros
+      ind_trends <- numeric(6)
       input_trends <- as.numeric(strsplit(input$individual_trends, ",")[[1]])
-      ind_trends[1:length(input_trends)] <- input_trends
+      ind_trends[1:length(input_trends)] <- input_trends[1:min(length(input_trends), 6)]
       
       data <- data %>%
-        mutate(value = value + ind_trends[country_num] * (year - min(year)))
+        group_by(country) %>%
+        mutate(
+          trend_value = ind_trends[match(country, LETTERS[1:6])] * (year - min(year)),
+          value = value + trend_value
+        ) %>%
+        ungroup()
     }
     
     # Add treatment effects
-    for(i in 1:4) {  # Only first 4 countries get treatment
-      data <- data %>%
-        mutate(
-          value = ifelse(country == LETTERS[i] & year >= treat_years[i] & treat_years[i] > 0,
-                         value + effects[i],
-                         value)
-        )
-    }
-    
-    # Add indicators for different models
     data <- data %>%
       mutate(
-        treated = country %in% LETTERS[1:4],
-        post = year >= 2015
+        cohort = case_when(
+          country == "A" ~ treat_timing[1],
+          country == "B" ~ treat_timing[2],
+          country == "C" ~ treat_timing[3],
+          country == "D" ~ treat_timing[4],
+          TRUE ~ NA_real_  # Control units get NA
+        ),
+        time_to_treat = case_when(
+          country == "A" ~ year - treat_timing[1],
+          country == "B" ~ year - treat_timing[2],
+          country == "C" ~ year - treat_timing[3],
+          country == "D" ~ year - treat_timing[4],
+          TRUE ~ 0
+        ),
+        post = time_to_treat >= 0 & treated,
+        effect = case_when(
+          country == "A" & post ~ effects[1],
+          country == "B" & post ~ effects[2],
+          country == "C" & post ~ effects[3],
+          country == "D" & post ~ effects[4],
+          TRUE ~ 0
+        ),
+        value = value + effect
       )
     
     return(data)
@@ -165,28 +172,22 @@ server <- function(input, output, session) {
     
     fd_model <- feols(value_diff ~ treated:post | year, data = fd_data)
     
-    # CS DiD model
-    cs_model <- att_gt(
-      yname = "value",
-      gname = "first_treat",  # Time of first treatment (0 for never treated)
-      tname = "year",
-      idname = "country_num",
-      data = data,
-      control_group = "notyettreated"  # Changed from nevertreated due to small sample
-    )
+    # Sun and Abraham style DiD
+    sa_model <- feols(value ~ sunab(cohort, year) | country + year, 
+                      data = data)
     
     # Create formatted table
     results_table <- data.frame(
-      Model = c("TWFE", "First Difference", "CS DiD"),
+      Model = c("TWFE", "First Difference", "Sun-Abraham"),
       Estimate = c(
         coef(twfe_model)["treated:post"],
         coef(fd_model)["treated:post"],
-        mean(cs_model$att)
+        mean(coef(sa_model)[grep("^treated::", names(coef(sa_model)))], na.rm = TRUE)
       ),
       SE = c(
         sqrt(vcov(twfe_model)["treated:post", "treated:post"]),
         sqrt(vcov(fd_model)["treated:post", "treated:post"]),
-        mean(cs_model$se)
+        NA
       )
     )
     
@@ -211,8 +212,8 @@ server <- function(input, output, session) {
     cat("\nFirst Difference Model:\n")
     print(summary(fd_model))
     
-    cat("\nCallaway & Sant'Anna DiD:\n")
-    print(summary(cs_model))
+    cat("\nSun-Abraham DiD Results:\n")
+    print(summary(sa_model))
   })
 }
 
