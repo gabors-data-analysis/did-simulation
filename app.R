@@ -1,8 +1,11 @@
+# I would like to develop a shiny app to show how variation in interventions are estimated in two different models: TWFE and DiD. Let us have 6 countries, A to F. and 11 time periods 2010 to 2020. Outcome (y) is sales of sugary drinks, set at a 1000,  b 2000, c 4000, d 5000, e 3000, f 6000. E and F and controls, no intervention. When the intervention happens at once, it is 2015. When staggered it is 2013, 2014, 2016 and 2017. Uniform intervention effect is -1000. Heterogenous is -500, -1500, -500, -1500. Now I want the app to create a graph and show regression results. We'll have 3 models. TWFE, TWFD (first difference) and Staggered DiD as in Callaway and sant'anna. I want users to be able to set the following aspects: time: once or staggered. size: uniform or heterogenous. Checkbox if early interventions are smaller (ie -500, -500, -1500, -1500). Checkbox if global trend: instead of fixed at values, every year consumption rises by 100.  Checkbox if individual trend: global rise + annual + 100,200,300,400, 0, 0. It would be great if all these values could also be set once user clicks on a 'under the hood' bottom.
+
 # Install and load required packages
 library(shiny)
 library(tidyverse)
 library(fixest)
 library(plotly)
+library(broom)
 
 # UI Definition
 ui <- fluidPage(
@@ -56,7 +59,6 @@ server <- function(input, output, session) {
   
   # Generate dataset based on inputs
   generate_data <- reactive({
-    # Base parameters
     years <- 2010:2020
     countries <- LETTERS[1:6]
     base_values <- c(input$base_a, input$base_b, input$base_c, 
@@ -68,16 +70,15 @@ server <- function(input, output, session) {
     } else {
       treat_timing <- c(2013, 2014, 2016, 2017)
     }
+    first_treat <- min(treat_timing)
     
     # Set up treatment effects
     if (input$effect_size == "uniform") {
       effects <- rep(input$uniform_effect, 4)
     } else {
-      effects <- numeric(4)
-      het_effects <- as.numeric(strsplit(input$hetero_effects, ",")[[1]])
-      effects[1:4] <- if(length(het_effects) >= 4) het_effects[1:4] else c(het_effects, rep(0, 4-length(het_effects)))
+      effects <- as.numeric(strsplit(input$hetero_effects, ",")[[1]])
       if (input$early_smaller) {
-        effects[1:4] <- sort(effects[1:4])
+        effects <- sort(effects)
       }
     }
     
@@ -98,10 +99,7 @@ server <- function(input, output, session) {
     
     # Add individual trends if selected
     if (input$individual_trend) {
-      ind_trends <- numeric(6)
-      input_trends <- as.numeric(strsplit(input$individual_trends, ",")[[1]])
-      ind_trends[1:length(input_trends)] <- input_trends[1:min(length(input_trends), 6)]
-      
+      ind_trends <- as.numeric(strsplit(input$individual_trends, ",")[[1]])
       data <- data %>%
         group_by(country) %>%
         mutate(
@@ -111,29 +109,20 @@ server <- function(input, output, session) {
         ungroup()
     }
     
-    # Add treatment effects
+    # Add treatment effects and timing variables
     data <- data %>%
       mutate(
-        cohort = case_when(
-          country == "A" ~ treat_timing[1],
-          country == "B" ~ treat_timing[2],
-          country == "C" ~ treat_timing[3],
-          country == "D" ~ treat_timing[4],
-          TRUE ~ NA_real_  # Control units get NA
+        post = case_when(
+          country == "A" ~ year >= treat_timing[1],
+          country == "B" ~ year >= treat_timing[2],
+          country == "C" ~ year >= treat_timing[3],
+          country == "D" ~ year >= treat_timing[4],
+          TRUE ~ FALSE
         ),
-        time_to_treat = case_when(
-          country == "A" ~ year - treat_timing[1],
-          country == "B" ~ year - treat_timing[2],
-          country == "C" ~ year - treat_timing[3],
-          country == "D" ~ year - treat_timing[4],
-          TRUE ~ 0
-        ),
-        post = time_to_treat >= 0 & treated,
+        event_time = year - ifelse(treated, first_treat, Inf),
+        post_event = event_time >= 0 & treated,
         effect = case_when(
-          country == "A" & post ~ effects[1],
-          country == "B" & post ~ effects[2],
-          country == "C" & post ~ effects[3],
-          country == "D" & post ~ effects[4],
+          country %in% LETTERS[1:4] & post ~ effects[match(country, LETTERS[1:4])],
           TRUE ~ 0
         ),
         value = value + effect
@@ -142,78 +131,25 @@ server <- function(input, output, session) {
     return(data)
   })
   
-  # Create plot
   output$did_plot <- renderPlotly({
     data <- generate_data()
-    
     p <- ggplot(data, aes(x = year, y = value, color = country, group = country)) +
       geom_line() +
       geom_point() +
       theme_minimal() +
-      labs(title = "Treatment Effects Over Time",
-           x = "Year",
-           y = "Sales of Sugary Drinks")
-    
+      labs(title = "Treatment Effects Over Time", x = "Year", y = "Sales of Sugary Drinks")
     ggplotly(p)
   })
   
-  # Run models and display results
   output$model_results <- renderPrint({
     data <- generate_data()
-    
-    # TWFE model
     twfe_model <- feols(value ~ treated:post | country + year, data = data)
-    
-    # First difference model
-    fd_data <- data %>%
-      group_by(country) %>%
-      mutate(value_diff = value - lag(value)) %>%
-      filter(!is.na(value_diff))
-    
+    fd_data <- data %>% group_by(country) %>% 
+      mutate(value_diff = value - lag(value)) %>% filter(!is.na(value_diff)) %>%
+      mutate(treated_diff = treated - lag(treated)) %>% filter(!is.na(treated_diff))
     fd_model <- feols(value_diff ~ treated:post | year, data = fd_data)
-    
-    # Sun and Abraham style DiD
-    sa_model <- feols(value ~ sunab(cohort, year) | country + year, 
-                      data = data)
-    
-    # Create formatted table
-    results_table <- data.frame(
-      Model = c("TWFE", "First Difference", "Sun-Abraham"),
-      Estimate = c(
-        coef(twfe_model)["treated:post"],
-        coef(fd_model)["treated:post"],
-        mean(coef(sa_model)[grep("^treated::", names(coef(sa_model)))], na.rm = TRUE)
-      ),
-      SE = c(
-        sqrt(vcov(twfe_model)["treated:post", "treated:post"]),
-        sqrt(vcov(fd_model)["treated:post", "treated:post"]),
-        NA
-      )
-    )
-    
-    results_table$CI_Lower <- results_table$Estimate - 1.96 * results_table$SE
-    results_table$CI_Upper <- results_table$Estimate + 1.96 * results_table$SE
-    
-    # Format numbers
-    results_table <- results_table %>%
-      mutate(across(where(is.numeric), ~round(., 2)))
-    
-    # Print formatted table
-    cat("Summary of Results:\n\n")
-    print(knitr::kable(results_table, 
-                       format = "pipe",
-                       col.names = c("Model", "Estimate", "Std. Error", "CI Lower", "CI Upper")))
-    
-    # Print detailed results
-    cat("\n\nDetailed Model Results:\n")
-    cat("\nTWFE Model:\n")
-    print(summary(twfe_model))
-    
-    cat("\nFirst Difference Model:\n")
-    print(summary(fd_model))
-    
-    cat("\nSun-Abraham DiD Results:\n")
-    print(summary(sa_model))
+    event_model <- feols(value ~ treated:post_event | country + year, data = data)
+    etable(twfe_model, fd_model, event_model)
   })
 }
 
