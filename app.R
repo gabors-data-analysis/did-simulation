@@ -174,9 +174,9 @@ server <- function(input, output, session) {
     # CS DiD model
     cs_model <- att_gt(
       yname = "value",
-      gname = "country_id",
+      gname = "g",
       tname = "year",
-      idname = "country_id",
+      idname = "country",
       data = data,
       control_group = "nevertreated",
       anticipation = 0
