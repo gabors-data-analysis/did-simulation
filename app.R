@@ -158,10 +158,13 @@ server <- function(input, output, session) {
   
   output$model_results <- renderPrint({
     data <- generate_data()
+    fd_data <- data %>% group_by(country) %>%
+      mutate(value_diff = value - lag(value), treatment_fd_diff = treatment_fd - lag(treatment_fd))     %>% filter(!is.na(value_diff) | !is.na(treatment_fd_diff))
+    
     fe_formula <- if (input$year_fe) "| country + year" else "| country"
+    fd_formula <- if (input$year_fe) "| year" else " "
     twfe_model <- feols(as.formula(paste("value ~ treated:post", fe_formula)), data = data)
-    fd_data <- data %>% group_by(country) %>% mutate(value_diff = value - lag(value), treatment_fd_diff = treatment_fd - lag(treatment_fd)) %>% filter(!is.na(value_diff))
-    fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd_diff", fe_formula)), data = fd_data)
+    fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd_diff", fd_formula)), data = fd_data)
     event_model <- feols(as.formula(paste("value ~ treated:post_event", fe_formula)), data = data)
     etable(twfe_model, fd_model, event_model)
   })
