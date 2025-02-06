@@ -38,7 +38,7 @@ ui <- fluidPage(
         numericInput("base_e", "Base value Country E:", 3000),
         numericInput("base_f", "Base value Country F:", 6000),
         numericInput("uniform_effect", "Uniform effect size:", -1000),
-        textInput("hetero_effects", "Heterogeneous effects (comma-separated):", 
+        textInput("hetero_effects", "Heterogeneous effects (comma-separated, first 4 used):", 
                   "-500,-1500,-500,-1500"),
         numericInput("global_trend_size", "Global trend increment:", 100),
         textInput("individual_trends", "Individual trends (comma-separated):", 
@@ -73,14 +73,18 @@ server <- function(input, output, session) {
     base_values <- c(input$base_a, input$base_b, input$base_c, 
                      input$base_d, input$base_e, input$base_f)
     
-    # Treatment effects
+    # Treatment effects - ensure length 6 with zeros for control units
     if (input$effect_size == "uniform") {
-      effects <- rep(input$uniform_effect, 4)
+      effects <- c(rep(input$uniform_effect, 4), 0, 0)  # 4 treated + 2 control
     } else {
       effects <- as.numeric(strsplit(input$hetero_effects, ",")[[1]])
+      if (length(effects) < 4) {
+        effects <- c(effects, rep(0, 4 - length(effects)))  # Pad treatment effects if needed
+      }
       if (input$early_smaller) {
         effects <- sort(effects)
       }
+      effects <- c(effects[1:4], 0, 0)  # Ensure exactly 6 elements with zeros for controls
     }
     
     # Create base dataset
@@ -118,14 +122,20 @@ server <- function(input, output, session) {
     # Add treatment indicators
     data <- data %>%
       mutate(
+        # For treated units, use their treatment year, for control units use Inf
+        treat_year = case_when(
+          country %in% LETTERS[1:4] ~ as.numeric(treat_years[match(country, LETTERS[1:4])]),
+          TRUE ~ Inf  # Control units (E and F) get Inf as their treatment year
+        ),
+        # Add numeric country identifier for did package
+        country_id = match(country, LETTERS),
+        # Other indicators
         treated = country %in% LETTERS[1:4],
         post = year >= 2015,
         rel_time = case_when(
           country %in% LETTERS[1:4] ~ year - treat_years[match(country, LETTERS[1:4])],
           TRUE ~ 0
-        ),
-        # Add numeric country identifier for did package
-        country_id = match(country, LETTERS)
+        )
       )
     
     return(data)
@@ -167,8 +177,9 @@ server <- function(input, output, session) {
       gname = "country_id",
       tname = "year",
       idname = "country_id",
-      data = data %>% filter(country != "E" & country != "F"),
-      control_group = "nevertreated"
+      data = data,
+      control_group = "nevertreated",
+      anticipation = 0
     )
     
     # Create formatted table output
