@@ -1,3 +1,17 @@
+# This is a shiny app to show how variation in interventions are estimated in two different models: TWFE and DiD. 
+# Let us have 6 countries, A to F. and 11 time periods 2010 to 2020. 
+# Outcome (y) is sales of sugary drinks, set at a 1000,  b 2000, c 4000, d 5000, e 3000, f 6000. E and F and controls, no intervention. 
+# When the intervention happens at once, it is 2015. When staggered it is 2013, 2014, 2016 and 2017. 
+# Uniform intervention effect is -1000. Heterogenous is -500, -1500, -500, -1500. 
+
+# Now I want the app to create a graph and show regression results. 
+# We'll have 4 models. TWFE, TWFD (first difference) and event time for Staggered DiD. The last will be as in Callaway and sant'anna or sun and abraham
+# I want users to be able to set the following aspects: time: once or staggered. size: uniform or heterogenous. 
+# Checkbox if early interventions are smaller (ie -500, -500, -1500, -1500). 
+# Checkbox if global trend: instead of fixed at values, every year consumption rises by 100.  
+# Checkbox if individual trend: global rise + annual + 100,200,300,400, 0, 0. 
+# It would be great if all these values could also be set once user clicks on a 'under the hood' bottom.
+
 # Install and load required packages
 library(shiny)
 library(tidyverse)
@@ -49,23 +63,12 @@ ui <- fluidPage(
     mainPanel(
       plotlyOutput("did_plot"),
       verbatimTextOutput("model_results"),
-      textOutput("warning_message"),
-      
-      # Fixed Effects Visualization Below
-      hr(),
-      h3("Understanding Fixed Effects"),
-      checkboxInput("apply_country_fe", "Apply Country Fixed Effects", FALSE),
-      checkboxInput("apply_year_fe", "Apply Year Fixed Effects", FALSE),
-      actionButton("reset_fe", "Reset"),
-      helpText("Toggle the checkboxes to see how Fixed Effects adjust the data."),
-      plotlyOutput("fe_plot"),
-      helpText("\nCountry FE removes baseline differences across countries. \nYear FE removes common trends. \nTWFE applies both.")
+      textOutput("warning_message")
     )
   )
 )
 
-
-  # Server logic
+# Server logic
 server <- function(input, output, session) {
   
   observe({
@@ -77,8 +80,6 @@ server <- function(input, output, session) {
       ))
     }
   })
-
-  
   
   # Generate dataset based on inputs
   generate_data <- reactive({
@@ -154,28 +155,10 @@ server <- function(input, output, session) {
         ),
         value = value + effect
       )
-
-        data <- expand.grid(year = years, country = countries) %>%
-      arrange(country, year) %>%
-      mutate(
-        base_value = rep(base_values, each = length(years)),
-        value = base_value,
-        treated = country %in% LETTERS[1:4],
-        post = case_when(
-          country == "A" ~ year >= treat_timing[1],
-          country == "B" ~ year >= treat_timing[2],
-          country == "C" ~ year >= treat_timing[3],
-          country == "D" ~ year >= treat_timing[4],
-          TRUE ~ FALSE
-        ),
-        effect = ifelse(treated & post, effects[match(country, LETTERS[1:4])], 0),
-        value = value + effect
-      )
     
     return(data)
   })
-
-
+  
   
   output$did_plot <- renderPlotly({
     data <- generate_data()
@@ -189,42 +172,19 @@ server <- function(input, output, session) {
   
   output$model_results <- renderPrint({
     data <- generate_data()
+    fd_data <- data %>% group_by(country) %>%
+      mutate(value_diff = value - lag(value), treatment_fd_diff = treatment_fd - lag(treatment_fd))     %>% filter(!is.na(value_diff) | !is.na(treatment_fd_diff))
+    
     fe_formula <- if (input$year_fe) "| country + year" else "| country"
+    fd_formula <- if (input$year_fe) "| year" else " "
     twfe_model <- feols(as.formula(paste("value ~ treated:post", fe_formula)), data = data)
     fd_data <- data %>% group_by(country) %>% mutate(value_diff = value - lag(value), treatment_fd_diff = treatment_fd - lag(treatment_fd)) %>% filter(!is.na(value_diff))
     fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd_diff", fe_formula)), data = fd_data)
-    event_model <- feols(as.formula(paste("value ~ treated:post_event", fe_formula)), data = data)
+    fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd_diff", fd_formula)), data = fd_data)
+    event_model <- feols(value ~ i(event_time, treated, ref = -1) | country + year, data = data)
     etable(twfe_model, fd_model, event_model)
   })
-
-
-output$fe_plot <- renderPlotly({
-  data <- generate_data()
-  
-  if (input$apply_country_fe) {
-    data <- data %>% group_by(country) %>% mutate(value = value - mean(value))
-  }
-  
-  if (input$apply_year_fe) {
-    data <- data %>% group_by(year) %>% mutate(value = value - mean(value))
-  }
-  
-  p <- ggplot(data, aes(x = year, y = value, color = country, group = country)) +
-    geom_line() +
-    geom_point() +
-    theme_minimal() +
-    labs(title = "Fixed Effects Adjustment", x = "Year", y = "Sales of Sugary Drinks")
-  
-  ggplotly(p)
-})
-
-observeEvent(input$reset_fe, {
-  updateCheckboxInput(session, "apply_country_fe", value = FALSE)
-  updateCheckboxInput(session, "apply_year_fe", value = FALSE)
-})
 }
-
-
 
 # Run the app
 shinyApp(ui = ui, server = server)
