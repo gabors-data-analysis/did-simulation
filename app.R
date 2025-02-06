@@ -1,5 +1,3 @@
-# I would like to develop a shiny app to show how variation in interventions are estimated in two different models: TWFE and DiD. Let us have 6 countries, A to F. and 11 time periods 2010 to 2020. Outcome (y) is sales of sugary drinks, set at a 1000,  b 2000, c 4000, d 5000, e 3000, f 6000. E and F and controls, no intervention. When the intervention happens at once, it is 2015. When staggered it is 2013, 2014, 2016 and 2017. Uniform intervention effect is -1000. Heterogenous is -500, -1500, -500, -1500. Now I want the app to create a graph and show regression results. We'll have 3 models. TWFE, TWFD (first difference) and Staggered DiD as in Callaway and sant'anna. I want users to be able to set the following aspects: time: once or staggered. size: uniform or heterogenous. Checkbox if early interventions are smaller (ie -500, -500, -1500, -1500). Checkbox if global trend: instead of fixed at values, every year consumption rises by 100.  Checkbox if individual trend: global rise + annual + 100,200,300,400, 0, 0. It would be great if all these values could also be set once user clicks on a 'under the hood' bottom.
-
 # Install and load required packages
 library(shiny)
 library(tidyverse)
@@ -25,6 +23,7 @@ ui <- fluidPage(
       checkboxInput("early_smaller", "Early interventions are smaller", FALSE),
       checkboxInput("global_trend", "Include global trend", FALSE),
       checkboxInput("individual_trend", "Include individual trends", FALSE),
+      checkboxInput("year_fe", "Include Year Fixed Effects", FALSE),
       
       # Advanced settings button
       actionButton("show_advanced", "Show Advanced Settings"),
@@ -49,13 +48,24 @@ ui <- fluidPage(
     
     mainPanel(
       plotlyOutput("did_plot"),
-      verbatimTextOutput("model_results")
+      verbatimTextOutput("model_results"),
+      textOutput("warning_message")
     )
   )
 )
 
 # Server logic
 server <- function(input, output, session) {
+  
+  observe({
+    if (input$year_fe & input$timing == "once" & !input$global_trend & !input$individual_trend) {
+      showModal(modalDialog(
+        title = "Warning",
+        "For uniformly timed single intervention and no global or individual trends, time dummies can not be added.",
+        easyClose = TRUE
+      ))
+    }
+  })
   
   # Generate dataset based on inputs
   generate_data <- reactive({
@@ -121,6 +131,10 @@ server <- function(input, output, session) {
         ),
         event_time = year - ifelse(treated, first_treat, Inf),
         post_event = event_time >= 0 & treated,
+        treatment_fd = case_when(
+          post & year == treat_timing[match(country, LETTERS[1:4])] ~ 1,
+          TRUE ~ 0
+        ),
         effect = case_when(
           country %in% LETTERS[1:4] & post ~ effects[match(country, LETTERS[1:4])],
           TRUE ~ 0
@@ -130,6 +144,7 @@ server <- function(input, output, session) {
     
     return(data)
   })
+  
   
   output$did_plot <- renderPlotly({
     data <- generate_data()
@@ -143,12 +158,11 @@ server <- function(input, output, session) {
   
   output$model_results <- renderPrint({
     data <- generate_data()
-    twfe_model <- feols(value ~ treated:post | country + year, data = data)
-    fd_data <- data %>% group_by(country) %>% 
-      mutate(value_diff = value - lag(value)) %>% filter(!is.na(value_diff)) %>%
-      mutate(treated_diff = treated - lag(treated)) %>% filter(!is.na(treated_diff))
-    fd_model <- feols(value_diff ~ treated:post | year, data = fd_data)
-    event_model <- feols(value ~ treated:post_event | country + year, data = data)
+    fe_formula <- if (input$year_fe) "| country + year" else "| country"
+    twfe_model <- feols(as.formula(paste("value ~ treated:post", fe_formula)), data = data)
+    fd_data <- data %>% group_by(country) %>% mutate(value_diff = value - lag(value), treatment_fd_diff = treatment_fd - lag(treatment_fd)) %>% filter(!is.na(value_diff))
+    fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd_diff", fe_formula)), data = fd_data)
+    event_model <- feols(as.formula(paste("value ~ treated:post_event", fe_formula)), data = data)
     etable(twfe_model, fd_model, event_model)
   })
 }
