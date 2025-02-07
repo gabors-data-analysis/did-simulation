@@ -13,6 +13,12 @@
 # It would be great if all these values could also be set once user clicks on a 'under the hood' bottom.
 
 # Install and load required packages
+if (!require(tidyverse)) install.packages("tidyverse")
+if (!require(fixest)) install.packages("fixest")
+if (!require(plotly)) install.packages("plotly")
+if (!require(broom)) install.packages("broom")
+
+
 library(shiny)
 library(tidyverse)
 library(fixest)
@@ -70,9 +76,14 @@ ui <- fluidPage(
       verbatimTextOutput("model_results"),
       textOutput("warning_message"),
       downloadButton("downloadData", "Download Data"),
-      downloadButton("downloadCode", "Download Code")
+      tags$div(
+        style = "margin-top: 20px;",
+        tags$p("Full app code available at: ",
+               tags$a(href = "https://github.com/gabors-data-analysis/did-simulation/blob/main/app.R",
+                      "GitHub Repository",
+                      target = "_blank"))
+      )
     )
-    
   )
 )
 
@@ -180,20 +191,18 @@ server <- function(input, output, session) {
   output$did_plot <- renderPlotly({
     data <- generate_data()
     p <- ggplot(data, aes(x = year, y = value, color = country, group = country)) +
+      geom_hline(yintercept = seq(0, max(data$value) + 1000, by = 500), 
+                 color = "grey90", size = 0.2) +
       geom_line() +
       geom_point() +
       theme_minimal() +
-      theme(panel.grid.minor = element_line(color = "grey90", size = 0.2),
-            panel.grid.major = element_line(color = "grey85"),
-            panel.grid.minor.y = element_line(color = "grey90", size = 0.2)) +
+      theme(panel.grid.major = element_line(color = "grey85")) +
       scale_x_continuous(breaks = 2010:2020) +
       scale_y_continuous(breaks = seq(0, max(data$value) + 1000, by = 1000), 
-                         minor_breaks = seq(0, max(data$value) + 500, by = 500),
-                         expand = c(0.00, 0.00)) +
-      coord_cartesian(ylim = c(0, max(data$value) + 1000)) +
+                         expand = c(0, 0),
+                         limits = c(0, max(data$value) + 1000)) +
       labs(title = "Treatment Effects Over Time", x = "Year", y = "Sales of Sugary Drinks")
-    ggplotly(p)
-    
+    ggplotly(p)    
   })
   
   
@@ -228,7 +237,7 @@ server <- function(input, output, session) {
     fd_formula <- if(input$year_fe) "| year" else ""
     
     twfe_model <- feols(as.formula(paste("value ~ post", fe_formula)), 
-                        data = data %>% filter(treated),
+    %                    data = data %>% filter(treated),
                         cluster = "country")
     
     fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd", fd_formula)), 
