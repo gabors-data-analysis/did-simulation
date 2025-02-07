@@ -1,0 +1,4 @@
+tidyverse
+fixest
+plotly
+broom
