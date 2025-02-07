@@ -13,6 +13,9 @@
 # It would be great if all these values could also be set once user clicks on a 'under the hood' bottom.
 
 # Install and load required packages
+
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
 if (!require(tidyverse)) install.packages("tidyverse")
 if (!require(fixest)) install.packages("fixest")
 if (!require(plotly)) install.packages("plotly")
@@ -45,6 +48,12 @@ ui <- fluidPage(
       checkboxInput("individual_trend", "Include individual trends", FALSE),
       checkboxInput("year_fe", "Include Year Fixed Effects", FALSE),
 
+      
+      radioButtons("num_shocks", "Number of Shocks:",
+                   choices = c("One" = "1",
+                               "Two (Same Effect)" = "2_same",
+                               "Two (Varied Effect)" = "2_varied"),
+                   selected = "1"),
       
       # Add to UI in sidebarPanel before actionButton:
       sliderInput("noise_sd", "Noise SD:", 
