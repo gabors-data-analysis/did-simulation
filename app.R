@@ -50,12 +50,12 @@ ui <- fluidPage(
       # Advanced settings panel (initially hidden)
       conditionalPanel(
         condition = "input.show_advanced % 2 == 1",
-        numericInput("base_a", "Base value Country A:", 1000),
-        numericInput("base_b", "Base value Country B:", 2000),
-        numericInput("base_c", "Base value Country C:", 4000),
-        numericInput("base_d", "Base value Country D:", 5000),
-        numericInput("base_e", "Base value Country E:", 3000),
-        numericInput("base_f", "Base value Country F:", 6000),
+        numericInput("base_a", "Base value Country A:", 2000),
+        numericInput("base_b", "Base value Country B:", 3000),
+        numericInput("base_c", "Base value Country C:", 5000),
+        numericInput("base_d", "Base value Country D:", 6000),
+        numericInput("base_e", "Base value Country E:", 4000),
+        numericInput("base_f", "Base value Country F:", 7000),
         numericInput("uniform_effect", "Uniform effect size:", -1000),
         textInput("hetero_effects", "Heterogeneous effects (comma-separated):", 
                   "-500,-1500,-500,-1500"),
@@ -110,7 +110,7 @@ server <- function(input, output, session) {
     } else {
       effects <- as.numeric(strsplit(input$hetero_effects, ",")[[1]])
       if (input$early_smaller) {
-        effects <- sort(effects)
+        effects <- effects[order(abs(effects))]
       }
     }
     
@@ -183,8 +183,17 @@ server <- function(input, output, session) {
       geom_line() +
       geom_point() +
       theme_minimal() +
+      theme(panel.grid.minor = element_line(color = "grey90", size = 0.2),
+            panel.grid.major = element_line(color = "grey85"),
+            panel.grid.minor.y = element_line(color = "grey90", size = 0.2)) +
+      scale_x_continuous(breaks = 2010:2020) +
+      scale_y_continuous(breaks = seq(0, max(data$value) + 1000, by = 1000), 
+                         minor_breaks = seq(0, max(data$value) + 500, by = 500),
+                         expand = c(0.00, 0.00)) +
+      coord_cartesian(ylim = c(0, max(data$value) + 1000)) +
       labs(title = "Treatment Effects Over Time", x = "Year", y = "Sales of Sugary Drinks")
     ggplotly(p)
+    
   })
   
   
