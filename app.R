@@ -237,7 +237,7 @@ server <- function(input, output, session) {
     fd_formula <- if(input$year_fe) "| year" else ""
     
     twfe_model <- feols(as.formula(paste("value ~ post", fe_formula)), 
-    %                    data = data %>% filter(treated),
+    #                    data = data %>% filter(treated),
                         cluster = "country")
     
     fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd", fd_formula)), 
