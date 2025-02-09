@@ -166,6 +166,7 @@ server <- function(input, output, session) {
         ungroup()
     }
     
+    # In the generate_data reactive function, reorder the mutations:
     data <- data %>%
       mutate(
         cohort = case_when(
@@ -183,28 +184,31 @@ server <- function(input, output, session) {
           TRUE ~ Inf
         ),
         relative_time = year - cohort,
+        # Create post variables first
         post = !is.infinite(cohort) & year >= cohort,
         post_second = !is.infinite(second_cohort) & year >= second_cohort,
-        effect = case_when(
+        # Then use them in treatment_level
+        treatment_level = case_when(
           !treated ~ 0,
           treated & !post ~ 0,
-          treated & post & post_second & input$num_shocks == "2_same" ~ 2 * effects[match(country, LETTERS[1:4])],
-          treated & post & post_second & input$num_shocks == "2_varied" ~ 
+          treated & post & !post_second ~ 1,
+          treated & post & post_second ~ 2,
+          TRUE ~ 0
+        ),
+        effect = case_when(
+          treatment_level == 0 ~ 0,
+          treatment_level == 1 ~ effects[match(country, LETTERS[1:4])],
+          treatment_level == 2 & input$num_shocks == "2_same" ~ 2 * effects[match(country, LETTERS[1:4])],
+          treatment_level == 2 & input$num_shocks == "2_varied" ~ 
             effects[match(country, LETTERS[1:4])] * (1 + as.numeric(input$second_shock_percent)/100),
-          treated & post ~ effects[match(country, LETTERS[1:4])],
           TRUE ~ 0
         ),
         value = value + effect,
         noise = rnorm(n(), mean = 0, sd = input$noise_sd),
         value = value + noise,
         event_time = relative_time,
-        post_event = !is.infinite(cohort) & relative_time >= 0,
-        treatment_fd = case_when(
-          post & year == cohort ~ 1,
-          TRUE ~ 0
-        )
+        post_event = !is.infinite(cohort) & relative_time >= 0
       )
-    
     return(data)
   })    
     
@@ -228,52 +232,54 @@ server <- function(input, output, session) {
   
 
 # In the server function:
-  output$model_results <- renderPrint({
-    data <- generate_data()
-    
-    fd_data <- data %>% 
-      group_by(country) %>%
-      mutate(
-        value_diff = value - lag(value),
-        post_diff = post - lag(post),
-        treatment_fd = if_else(post_diff == 1, 1, 0)
-      ) %>% 
-      filter(!is.na(value_diff))
-    
-    data_event <- data %>%
-      mutate(
-        rel_year = factor(
-          case_when(
-            relative_time < -5 ~ "-5+",
-            relative_time > 5 ~ "5+",
-            TRUE ~ as.character(relative_time)
-          ),
-          levels = c("-5+", as.character(-4:5), "5+")
-        )
-      ) %>%
-      filter(!is.infinite(cohort) | is.infinite(relative_time))
-    
-    fe_formula <- if(input$year_fe) "| country + year" else "| country"
-    fd_formula <- if(input$year_fe) "| year" else ""
-    
-    twfe_model <- feols(as.formula(paste("value ~ post", fe_formula)), 
-                        data = data ,
-    # %>% filter(treated),
+ # Update the regression models in the model_results output:
+    output$model_results <- renderPrint({
+      data <- generate_data()
+      
+      # First difference data preparation with treatment levels
+      fd_data <- data %>% 
+        group_by(country) %>%
+        mutate(
+          value_diff = value - lag(value),
+          treatment_level_diff = treatment_level - lag(treatment_level)
+        ) %>% 
+        filter(!is.na(value_diff))
+      
+      # Event study data preparation
+      data_event <- data %>%
+        mutate(
+          rel_year = factor(
+            case_when(
+              relative_time < -5 ~ "-5+",
+              relative_time > 5 ~ "5+",
+              TRUE ~ as.character(relative_time)
+            ),
+            levels = c("-5+", as.character(-4:5), "5+")
+          )
+        ) %>%
+        filter(!is.infinite(cohort) | is.infinite(relative_time))
+      
+      fe_formula <- if(input$year_fe) "| country + year" else "| country"
+      fd_formula <- if(input$year_fe) "| year" else ""
+      
+      # Updated TWFE model with treatment levels as factor
+      twfe_model <- feols(as.formula(paste("value ~ factor(treatment_level)", fe_formula)), 
+                          data = data,
+                          cluster = "country")
+      
+      # Updated first difference model
+      fd_model <- feols(as.formula(paste("value_diff ~ factor(treatment_level_diff)", fd_formula)), 
+                        data = fd_data,
                         cluster = "country")
-    
-    fd_model <- feols(as.formula(paste("value_diff ~ treatment_fd", fd_formula)), 
-                      data = fd_data,
-                      cluster = "country")
-    
-    event_model <- feols(value ~ i(rel_year, ref = "-1") | country + year, 
-                         cluster = "country",
-                         data = data_event)
-    
-    etable(twfe_model, fd_model, event_model,
-           headers = c("TWFE", "First Difference", "Event Study"))
-  })
-  
-  
+      
+      # Event study model remains the same
+      event_model <- feols(value ~ i(rel_year, ref = "-1") | country + year, 
+                           cluster = "country",
+                           data = data_event)
+      
+      etable(twfe_model, fd_model, event_model,
+             headers = c("TWFE", "First Difference", "Event Study"))
+    })  
   
   # Add to server:
   output$downloadData <- downloadHandler(
