@@ -49,6 +49,7 @@ ui <- fluidPage(
       checkboxInput("year_fe", "Include Year Fixed Effects", FALSE),
 
       
+      #  shock controls:
       radioButtons("num_shocks", "Number of Shocks:",
                    choices = c("One" = "1",
                                "Two (Same Effect)" = "2_same",
@@ -56,9 +57,9 @@ ui <- fluidPage(
                    selected = "1"),
       
       conditionalPanel(
-        condition = "input.num_shocks != '1'",
+        condition = "input.num_shocks == '2_varied'",
         sliderInput("second_shock_percent", "Second Shock Effect (%)", 
-                    min = -100, max = 100, value = 0, step = 10)
+                    min = -100, max = 200, value = 50, step = 10)
       ),
       
       
@@ -167,6 +168,7 @@ server <- function(input, output, session) {
     }
     
     # In the generate_data reactive function, reorder the mutations:
+    # In the generate_data reactive function, update the treatment calculation:
     data <- data %>%
       mutate(
         cohort = case_when(
@@ -184,30 +186,28 @@ server <- function(input, output, session) {
           TRUE ~ Inf
         ),
         relative_time = year - cohort,
-        # Create post variables first
         post = !is.infinite(cohort) & year >= cohort,
         post_second = !is.infinite(second_cohort) & year >= second_cohort,
-        # Then use them in treatment_level
-        treatment_level = case_when(
+        
+        # Simplified treatment level
+        treatment = case_when(
           !treated ~ 0,
           treated & !post ~ 0,
           treated & post & !post_second ~ 1,
           treated & post & post_second ~ 2,
           TRUE ~ 0
         ),
+        
+        # Updated effect calculation
         effect = case_when(
-          treatment_level == 0 ~ 0,
-          treatment_level == 1 ~ effects[match(country, LETTERS[1:4])],
-          treatment_level == 2 & input$num_shocks == "2_same" ~ 2 * effects[match(country, LETTERS[1:4])],
-          treatment_level == 2 & input$num_shocks == "2_varied" ~ 
-            effects[match(country, LETTERS[1:4])] * (1 + as.numeric(input$second_shock_percent)/100),
+          treatment == 0 ~ 0,
+          treatment == 1 ~ effects[match(country, LETTERS[1:4])],
+          treatment == 2 & input$num_shocks == "2_same" ~ 2 * effects[match(country, LETTERS[1:4])],
+          treatment == 2 & input$num_shocks == "2_varied" ~ 
+            effects[match(country, LETTERS[1:4])] * (1 + input$second_shock_percent/100),
           TRUE ~ 0
         ),
-        value = value + effect,
-        noise = rnorm(n(), mean = 0, sd = input$noise_sd),
-        value = value + noise,
-        event_time = relative_time,
-        post_event = !is.infinite(cohort) & relative_time >= 0
+        value = value + effect
       )
     return(data)
   })    
@@ -233,64 +233,53 @@ server <- function(input, output, session) {
 
 # In the server function:
  # Update the regression models in the model_results output:
-    output$model_results <- renderPrint({
-      data <- generate_data()
-      
-      # First difference data preparation with treatment levels
-      fd_data <- data %>% 
-        group_by(country) %>%
-        mutate(
-          value_diff = value - lag(value),
-          treatment_level_diff = treatment_level - lag(treatment_level)
-        ) %>% 
-        filter(!is.na(value_diff))
-      
-      # Event study data preparation
-      data_event <- data %>%
-        mutate(
-          rel_year = factor(
-            case_when(
-              relative_time < -5 ~ "-5+",
-              relative_time > 5 ~ "5+",
-              TRUE ~ as.character(relative_time)
-            ),
-            levels = c("-5+", as.character(-4:5), "5+")
-          )
-        ) %>%
-        filter(!is.infinite(cohort) | is.infinite(relative_time))
-      
-      fe_formula <- if(input$year_fe) "| country + year" else "| country"
-      fd_formula <- if(input$year_fe) "| year" else ""
-      
-      # Updated TWFE model with treatment levels as factor
-      twfe_model <- feols(as.formula(paste("value ~ factor(treatment_level)", fe_formula)), 
-                          data = data,
-                          cluster = "country")
-      
-      # Updated first difference model
-      fd_model <- feols(as.formula(paste("value_diff ~ factor(treatment_level_diff)", fd_formula)), 
-                        data = fd_data,
+  # Update the regression models to use the simplified treatment variable:
+  output$model_results <- renderPrint({
+    data <- generate_data()
+    
+    # First difference data preparation
+    fd_data <- data %>% 
+      group_by(country) %>%
+      mutate(
+        value_diff = value - lag(value),
+        treatment_diff = treatment - lag(treatment)
+      ) %>% 
+      filter(!is.na(value_diff))
+    
+    # Event study data preparation remains the same
+    data_event <- data %>%
+      mutate(
+        rel_year = factor(
+          case_when(
+            relative_time < -5 ~ "-5+",
+            relative_time > 5 ~ "5+",
+            TRUE ~ as.character(relative_time)
+          ),
+          levels = c("-5+", as.character(-4:5), "5+")
+        )
+      ) %>%
+      filter(!is.infinite(cohort) | is.infinite(relative_time))
+    
+    fe_formula <- if(input$year_fe) "| country + year" else "| country"
+    fd_formula <- if(input$year_fe) "| year" else ""
+    
+    # Simplified models using treatment as a factor
+    twfe_model <- feols(as.formula(paste("value ~ treatment", fe_formula)), 
+                        data = data,
                         cluster = "country")
-      
-      # Event study model remains the same
-      event_model <- feols(value ~ i(rel_year, ref = "-1") | country + year, 
-                           cluster = "country",
-                           data = data_event)
-      
-      etable(twfe_model, fd_model, event_model,
-             headers = c("TWFE", "First Difference", "Event Study"))
-    })  
-  
-  # Add to server:
-  output$downloadData <- downloadHandler(
-    filename = function() {
-      paste0("did_data_", Sys.Date(), ".csv")
-    },
-    content = function(file) {
-      write.csv(generate_data(), file, row.names = FALSE)
-    }
-  )
-  }
+    
+    fd_model <- feols(as.formula(paste("value_diff ~ treatment_diff", fd_formula)), 
+                      data = fd_data,
+                      cluster = "country")
+    
+    event_model <- feols(value ~ i(rel_year, ref = "-1") | country + year, 
+                         cluster = "country",
+                         data = data_event)
+    
+    etable(twfe_model, fd_model, event_model,
+           headers = c("TWFE", "First Difference", "Event Study"))
+  })  
+}
 
 # Run the app
 shinyApp(ui = ui, server = server)
