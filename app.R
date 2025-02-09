@@ -167,8 +167,7 @@ server <- function(input, output, session) {
         ungroup()
     }
     
-    # In the generate_data reactive function, reorder the mutations:
-    # In the generate_data reactive function, update the treatment calculation:
+    # In the generate_data reactive function, reorder the mutations, update the treatment calculation:
     data <- data %>%
       mutate(
         cohort = case_when(
@@ -178,7 +177,9 @@ server <- function(input, output, session) {
           country == "D" ~ treat_timing[4],
           TRUE ~ Inf
         ),
+        # Only set second_cohort if multiple shocks selected
         second_cohort = case_when(
+          input$num_shocks == "1" ~ Inf,  # No second treatment for single shock
           country == "A" ~ second_treat_timing[1],
           country == "B" ~ second_treat_timing[2],
           country == "C" ~ second_treat_timing[3],
@@ -189,10 +190,11 @@ server <- function(input, output, session) {
         post = !is.infinite(cohort) & year >= cohort,
         post_second = !is.infinite(second_cohort) & year >= second_cohort,
         
-        # Simplified treatment level
+        # Simplified treatment with no second shock for single treatment
         treatment = case_when(
           !treated ~ 0,
           treated & !post ~ 0,
+          treated & post & (input$num_shocks == "1") ~ 1,  # Stay at 1 for single shock
           treated & post & !post_second ~ 1,
           treated & post & post_second ~ 2,
           TRUE ~ 0
@@ -207,7 +209,8 @@ server <- function(input, output, session) {
             effects[match(country, LETTERS[1:4])] * (1 + input$second_shock_percent/100),
           TRUE ~ 0
         ),
-        value = value + effect
+        noise = rnorm(n(), mean = 0, sd = input$noise_sd),
+        value = value + effect + noise
       )
     return(data)
   })    
@@ -221,7 +224,7 @@ server <- function(input, output, session) {
       geom_point() +
       theme_minimal() +
       theme(panel.grid.major = element_line(color = "grey85")) +
-      scale_x_continuous(breaks = 2010:2020) +
+      scale_x_continuous(breaks = 2010:2022) +
       scale_y_continuous(breaks = seq(0, max(data$value) + 1000, by = 1000), 
                          expand = c(0, 0),
                          limits = c(0, max(data$value) + 1000)) +
