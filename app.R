@@ -31,6 +31,32 @@ library(broom)
 # UI Definition
 ui <- fluidPage(
   titlePanel("Difference-in-Differences Estimation Comparison"),
+
+  # Add description panel at the top
+  fluidRow(
+    column(12,
+           div(
+             class = "well",
+             style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
+             p(
+               "In development. Suggestions: contact ",
+               tags$a(href = "mailto:bekesg@ceu.edu", "Gabor"),
+               " / add an issue to ",
+               tags$a(
+                 href = "https://github.com/gabors-data-analysis/did-simulation/",
+                 target = "_blank",
+                 "repo"                )),
+             p("This is a panel estimation illustration. Imagine we have 6 countries, A to F, and 13 time periods 2010 to 2022. 
+          Outcome (y) is average per capita sales of sugary drinks (ml/week), set at a 1000, b 2000, c 4000, d 5000, e 3000, f 6000. 
+          E and F are controls, no intervention."),
+             p("The intervention is sales tax that cuts consumption by -1000 as default. You can set many aspects of the intervention, 
+          even have 2.")
+           )
+    )
+  ),
+  
+  
+
   
   sidebarLayout(
     sidebarPanel(
@@ -87,9 +113,22 @@ ui <- fluidPage(
                   "100,200,300,400,0,0")
       )
     ),
-    
+
+    # In the mainPanel section of the UI:
     mainPanel(
       plotlyOutput("did_plot"),
+      
+      # Add a div for spacing
+      div(style = "margin: 40px 0;"),  # This creates 40 pixels of vertical space
+      
+      # Add info box before model results
+      div(
+        style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
+        p(style = "margin: 0;", "We have three models: FE, FD, and event study. The event study recenters the intervention when it's a single one. 
+          For multiple ones, it only considers the first. Models estimated in R with FEOLS")
+      ),
+      
+      
       verbatimTextOutput("model_results"),
       textOutput("warning_message"),
       downloadButton("downloadData", "Download Data"),
@@ -104,6 +143,8 @@ ui <- fluidPage(
   )
 )
 
+        
+ 
 # Server logic
 server <- function(input, output, session) {
   
@@ -225,9 +266,9 @@ server <- function(input, output, session) {
       theme_minimal() +
       theme(panel.grid.major = element_line(color = "grey85")) +
       scale_x_continuous(breaks = 2010:2022) +
-      scale_y_continuous(breaks = seq(0, max(data$value) + 1000, by = 1000), 
+      scale_y_continuous(breaks = seq(-1000, max(data$value) + 1000, by = 1000), 
                          expand = c(0, 0),
-                         limits = c(0, max(data$value) + 1000)) +
+                         limits = c(-1000, max(data$value) + 1000)) +
       labs(title = "Treatment Effects Over Time", x = "Year", y = "Sales of Sugary Drinks")
     ggplotly(p)    
   })
