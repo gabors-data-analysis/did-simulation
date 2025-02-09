@@ -125,7 +125,7 @@ ui <- fluidPage(
       div(
         style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
         p(style = "margin: 0;", "We have three models: FE, FD, and event study. The event study recenters the intervention when it's a single one. 
-          For multiple ones, it only considers the first. Models estimated in R with FEOLS")
+          For multiple ones, does not display. Models estimated in R with feols.")
       ),
       
       
@@ -278,6 +278,8 @@ server <- function(input, output, session) {
 # In the server function:
  # Update the regression models in the model_results output:
   # Update the regression models to use the simplified treatment variable:
+  # Update the model_results output section:
+  # Update the model specification part in the model_results:
   output$model_results <- renderPrint({
     data <- generate_data()
     
@@ -290,39 +292,57 @@ server <- function(input, output, session) {
       ) %>% 
       filter(!is.na(value_diff))
     
-    # Event study data preparation remains the same
+    # Event study data preparation
     data_event <- data %>%
       mutate(
         rel_year = factor(
           case_when(
-            relative_time < -5 ~ "-5+",
-            relative_time > 5 ~ "5+",
-            TRUE ~ as.character(relative_time)
+            relative_time == -1 ~ "-1",
+            relative_time == 0 ~ "0",
+            TRUE ~ "other"
           ),
-          levels = c("-5+", as.character(-4:5), "5+")
+          levels = c("-1", "0", "other")
         )
       ) %>%
       filter(!is.infinite(cohort) | is.infinite(relative_time))
     
-    fe_formula <- if(input$year_fe) "| country + year" else "| country"
-    fd_formula <- if(input$year_fe) "| year" else ""
-    
-    # Simplified models using treatment as a factor
-    twfe_model <- feols(as.formula(paste("value ~ treatment", fe_formula)), 
-                        data = data,
+    # Proper formula construction for fixed effects
+    if(input$year_fe) {
+      twfe_model <- feols(value ~ treatment | country + year, 
+                          data = data,
+                          cluster = "country")
+      
+      fd_model <- feols(value_diff ~ treatment_diff | year, 
+                        data = fd_data,
                         cluster = "country")
+    } else {
+      twfe_model <- feols(value ~ treatment | country, 
+                          data = data,
+                          cluster = "country")
+      
+      fd_model <- feols(value_diff ~ treatment_diff, 
+                        data = fd_data,
+                        cluster = "country")
+    }
     
-    fd_model <- feols(as.formula(paste("value_diff ~ treatment_diff", fd_formula)), 
-                      data = fd_data,
-                      cluster = "country")
+    # Event study model - only run for single intervention
+    if(input$num_shocks == "1") {
+      event_model <- feols(value ~ i(rel_year, ref = "-1") | country, 
+                           cluster = "country",
+                           data = data_event)
+    } else {
+      # For multiple interventions, create a model with NA coefficient
+      event_model <- feols(value ~ 1 | country , 
+                           cluster = "country",
+                           data = data_event)
+    }
     
-    event_model <- feols(value ~ i(rel_year, ref = "-1") | country + year, 
-                         cluster = "country",
-                         data = data_event)
-    
+    # Custom etable output
     etable(twfe_model, fd_model, event_model,
-           headers = c("TWFE", "First Difference", "Event Study"))
-  })  
+           headers = c("TWFE", "First Difference", "Event Study (t=0)"),
+           drop = c("Constant", "_other", "Intercept"),
+           signif.code = NA)
+  })
 }
 
 # Run the app
