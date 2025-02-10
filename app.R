@@ -30,7 +30,7 @@ library(broom)
 
 # UI Definition
 ui <- fluidPage(
-  titlePanel("Difference-in-Differences Estimation Comparison"),
+  titlePanel("Gabor's Panel Models Estimation Comparison"),
 
   # Add description panel at the top
   fluidRow(
@@ -39,18 +39,18 @@ ui <- fluidPage(
              class = "well",
              style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
              p(
-               "In development. Suggestions: contact ",
+               "v0.1 2025-02-10. In development. Suggestions: contact ",
                tags$a(href = "mailto:bekesg@ceu.edu", "Gabor"),
                " / add an issue to ",
                tags$a(
                  href = "https://github.com/gabors-data-analysis/did-simulation/",
                  target = "_blank",
                  "repo"                )),
+             p("When you observe many units over time and want understand the effect of some policy change, you consider TWFE or FD panel models or do an event study design for first differences. This is a toy simulation to illustrate some points."),
              p("This is a panel estimation illustration. Imagine we have 6 countries, A to F, and 13 time periods 2010 to 2022. 
           Outcome (y) is average per capita sales of sugary drinks (ml/week), set at a 1000, b 2000, c 4000, d 5000, e 3000, f 6000. 
-          E and F are controls, no intervention."),
-             p("The intervention is sales tax that cuts consumption by -1000 as default. You can set many aspects of the intervention, 
-          even have 2.")
+          E and F are controls, no intervention. The intervention is sales tax that cuts consumption by -1000 as default. You can set many aspects of the intervention, 
+          even have 2. All interventions have immediate effect, no build up (yet).")
            )
     )
   ),
@@ -73,7 +73,8 @@ ui <- fluidPage(
       checkboxInput("global_trend", "Include global trend", FALSE),
       checkboxInput("individual_trend", "Include individual trends", FALSE),
       checkboxInput("year_fe", "Include Year Fixed Effects", FALSE),
-
+      checkboxInput("country_fe_fd", "Add Country FE to First Difference Model", FALSE),
+      
       
       #  shock controls:
       radioButtons("num_shocks", "Number of Shocks:",
@@ -311,23 +312,39 @@ server <- function(input, output, session) {
     
     
     # Proper formula construction for fixed effects
+    # Then in the server section, modify the model specification:
     if(input$year_fe) {
       twfe_model <- feols(value ~ treatment | country + year, 
                           data = data,
                           cluster = "country")
       
-      fd_model <- feols(value_diff ~ treatment_diff | year, 
-                        data = fd_data,
-                        cluster = "country")
+      # Modified FD model with conditional country FE
+      if(input$country_fe_fd) {
+        fd_model <- feols(value_diff ~ treatment_diff | country + year, 
+                          data = fd_data,
+                          cluster = "country")
+      } else {
+        fd_model <- feols(value_diff ~ treatment_diff | year, 
+                          data = fd_data,
+                          cluster = "country")
+      }
     } else {
       twfe_model <- feols(value ~ treatment | country, 
                           data = data,
                           cluster = "country")
       
-      fd_model <- feols(value_diff ~ treatment_diff, 
-                        data = fd_data,
-                        cluster = "country")
+      # Modified FD model with conditional country FE
+      if(input$country_fe_fd) {
+        fd_model <- feols(value_diff ~ treatment_diff | country, 
+                          data = fd_data,
+                          cluster = "country")
+      } else {
+        fd_model <- feols(value_diff ~ treatment_diff, 
+                          data = fd_data,
+                          cluster = "country")
+      }
     }
+    
     
 #    Event study model - only run for single intervention
     # Event study model in first differences - only run for single intervention
