@@ -292,19 +292,23 @@ server <- function(input, output, session) {
       ) %>% 
       filter(!is.na(value_diff))
     
-    # Event study data preparation
+    # Event study data preparation - only include -3 to +3 years
     data_event <- data %>%
+      group_by(country) %>%
       mutate(
+        value_diff = value - lag(value),
         rel_year = factor(
           case_when(
-            relative_time == -1 ~ "-1",
-            relative_time == 0 ~ "0",
-            TRUE ~ "other"
+            relative_time < -3 ~ "pre",
+            relative_time > 3 ~ "post",
+            TRUE ~ as.character(relative_time)
           ),
-          levels = c("-1", "0", "other")
+          levels = c("pre", as.character(-3:3), "post")
         )
       ) %>%
-      filter(!is.infinite(cohort) | is.infinite(relative_time))
+      filter(!is.infinite(cohort) | is.infinite(relative_time)) %>%
+      filter(!is.na(value_diff))  # Remove first observation due to differencing
+    
     
     # Proper formula construction for fixed effects
     if(input$year_fe) {
@@ -325,23 +329,26 @@ server <- function(input, output, session) {
                         cluster = "country")
     }
     
-    # Event study model - only run for single intervention
+#    Event study model - only run for single intervention
+    # Event study model in first differences - only run for single intervention
     if(input$num_shocks == "1") {
-      event_model <- feols(value ~ i(rel_year, ref = "-1") | country, 
+      event_model <- feols(value_diff ~ i(rel_year, ref = "-1"), 
                            cluster = "country",
                            data = data_event)
     } else {
       # For multiple interventions, create a model with NA coefficient
-      event_model <- feols(value ~ 1 | country , 
+      event_model <- feols(value_diff ~ 1, 
                            cluster = "country",
                            data = data_event)
     }
+
     
     # Custom etable output
     etable(twfe_model, fd_model, event_model,
-           headers = c("TWFE", "First Difference", "Event Study (t=0)"),
-           drop = c("Constant", "_other", "Intercept"),
+           headers = c("TWFE", "First Difference", "Event Study FD (t=0)"),
+           drop = c("Constant", "_other", "Intercept", "pre", "post"),
            signif.code = NA)
+    
   })
 }
 
