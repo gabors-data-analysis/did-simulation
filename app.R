@@ -346,9 +346,9 @@ server <- function(input, output, session) {
     # Custom etable output
     etable(twfe_model, fd_model, event_model,
            headers = c("TWFE", "First Difference", "Event Study FD (t=0)"),
-           drop = c("Constant", "_other", "Intercept", "pre", "post"),
+           drop = c("Constant", "rel_year = -3", "rel_year = -2", "rel_year = -1",  "rel_year = 1", 
+                    "rel_year = 2", "rel_year = 3", "pre", "post", "Intercept"),
            signif.code = NA)
-    
   })
 }
 
