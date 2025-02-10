@@ -125,7 +125,7 @@ ui <- fluidPage(
       # Add info box before model results
       div(
         style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
-        p(style = "margin: 0;", "We have three models: FE, FD, and event study. The event study recenters the intervention when it's a single one. 
+        p(style = "margin: 0;", "We have three models: FE, FD, and event study. FE do not have time dummies as default. The event study recenters the intervention when it's a single one. 
           For multiple ones, does not display. Models estimated in R with feols.")
       ),
       
@@ -362,7 +362,7 @@ server <- function(input, output, session) {
     
     # Custom etable output
     etable(twfe_model, fd_model, event_model,
-           headers = c("TWFE", "First Difference", "Event Study FD (t=0)"),
+           headers = c("FE", "First Difference", "Event Study FD (t=0)"),
            drop = c("Constant", "rel_year = -3", "rel_year = -2", "rel_year = -1",  "rel_year = 1", 
                     "rel_year = 2", "rel_year = 3", "pre", "post", "Intercept"),
            signif.code = NA)
