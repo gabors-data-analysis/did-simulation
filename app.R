@@ -131,6 +131,23 @@ ui <- fluidPage(
       
       
       verbatimTextOutput("model_results"),
+      
+      # Separator and Section Heading
+      tags$hr(),
+      tags$h3("Illustrating TWFE: Removing Fixed Effects"),
+      tags$p("This section demonstrates how the TWFE model works step by step by removing country and year fixed effects."),
+      
+      # Button to trigger TWFE transformation
+      actionButton("run_twfe", "Show TWFE Transformation"),
+      
+      # TWFE Transformation Plot
+      plotlyOutput("twfe_plot"),
+      
+      # Explanation of the transformation steps
+      textOutput("twfe_explanation"),
+      
+      
+      
       textOutput("warning_message"),
       downloadButton("downloadData", "Download Data"),
       tags$div(
@@ -257,6 +274,46 @@ server <- function(input, output, session) {
     return(data)
   })    
     
+####################################xx
+# creating the twfe data  
+####################################xx
+  
+  # TWFE Transformation Steps
+  run_twfe_transform <- reactive({
+    req(input$run_twfe)  # Ensure it only runs when the button is clicked
+    
+    isolate({
+      data <- generate_data()
+      
+      # Step 1: Raw data
+      raw_data <- data %>%
+        mutate(transformation = "Raw Data")
+      
+      # Step 2: Remove Country FE
+      country_means <- data %>%
+        group_by(country) %>%
+        summarize(country_avg = mean(value))
+      
+      country_adjusted <- data %>%
+        left_join(country_means, by = "country") %>%
+        mutate(value = value - country_avg, transformation = "Country FE Removed")
+      
+      # Step 3: Remove Year FE
+      year_means <- country_adjusted %>%
+        group_by(year) %>%
+        summarize(year_avg = mean(value))
+      
+      final_data <- country_adjusted %>%
+        left_join(year_means, by = "year") %>%
+        mutate(value = value - year_avg, transformation = "Year FE Removed")
+      
+      twfe_data <- bind_rows(raw_data, country_adjusted, final_data)
+      
+      return(twfe_data)
+    })
+  })
+  
+  
   output$did_plot <- renderPlotly({
     data <- generate_data()
     p <- ggplot(data, aes(x = year, y = value, color = country, group = country)) +
@@ -366,8 +423,44 @@ server <- function(input, output, session) {
            drop = c("Constant", "rel_year = -3", "rel_year = -2", "rel_year = -1",  "rel_year = 1", 
                     "rel_year = 2", "rel_year = 3", "pre", "post", "Intercept"),
            signif.code = NA)
+    
+    
   })
+  
+  
+  # new code
+  # Plot TWFE Step by Step
+  output$twfe_plot <- renderPlotly({
+    req(input$run_twfe)  # Only runs when button is clicked
+    twfe_data <- run_twfe_transform()
+    
+    p <- ggplot(twfe_data, aes(x = year, y = value, color = country)) +
+      geom_line() +
+      geom_point() +
+      facet_wrap(~transformation, nrow = 1) +
+      theme_minimal() +
+      labs(title = "TWFE Transformation: Step-by-Step Fixed Effects Removal",
+           x = "Year", y = "Adjusted Outcome")
+    
+    ggplotly(p)
+  })
+  
+  # Explanation of TWFE Steps
+  output$twfe_explanation <- renderText({
+    req(input$run_twfe)
+    paste(
+      "1. Raw Data: Observed sales by country over time.",
+      "2. Country FE Removed: Within-country deviations from mean.",
+      "3. Year FE Removed: Adjusted values capturing within-country, within-year variation.",
+      sep = "\n"
+    )
+  })
+  
+  
 }
+
+
+
 
 # Run the app
 shinyApp(ui = ui, server = server)
