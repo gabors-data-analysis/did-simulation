@@ -4,6 +4,9 @@ library(tidyverse)
 library(fixest)
 library(plotly)
 library(broom)
+library(gridExtra)
+
+
 
 # Data generation function
 generate_data <- function(input) {
@@ -177,6 +180,209 @@ run_models <- function(data, input) {
     ) %>%
     filter(!is.infinite(cohort) | is.infinite(relative_time)) %>%
     filter(!is.na(value_diff))
+  
+  # Model specifications
+  if(input$year_fe) {
+    twfe_model <- feols(value ~ treatment | country + year, 
+                        data = data,
+                        cluster = "country")
+    
+    if(input$country_fe_fd) {
+      fd_model <- feols(value_diff ~ treatment_diff | country + year, 
+                        data = fd_data,
+                        cluster = "country")
+    } else {
+      fd_model <- feols(value_diff ~ treatment_diff | year, 
+                        data = fd_data,
+                        cluster = "country")
+    }
+  } else {
+    twfe_model <- feols(value ~ treatment | country, 
+                        data = data,
+                        cluster = "country")
+    
+    if(input$country_fe_fd) {
+      fd_model <- feols(value_diff ~ treatment_diff | country, 
+                        data = fd_data,
+                        cluster = "country")
+    } else {
+      fd_model <- feols(value_diff ~ treatment_diff, 
+                        data = fd_data,
+                        cluster = "country")
+    }
+  }
+  
+  # Event study model
+  if(input$num_shocks == "1") {
+    event_model <- feols(value_diff ~ i(rel_year, ref = "-1"), 
+                         cluster = "country",
+                         data = data_event)
+  } else {
+    event_model <- feols(value_diff ~ 1, 
+                         cluster = "country",
+                         data = data_event)
+  }
+  
+  return(list(
+    twfe = twfe_model,
+    fd = fd_model,
+    event = event_model
+  ))
+}
+
+
+# Transform data for event study visualization
+# Transform data for event study visualization
+transform_event_study_data <- function(data, min_time, max_time) {
+  # Add basic indicators
+  base_data <- data %>%
+    mutate(
+      treated_group = !is.infinite(cohort),
+      relative_time = year - cohort
+    )
+  
+  # 1. Original data panel - keep exactly as in main plot
+  p1_data <- base_data %>%
+    mutate(
+      panel = "1. Original Time Series",
+      vline = cohort  # Store treatment timing for vertical lines
+    )
+  
+  # 2. Event time panel - only treated units
+  p2_data <- base_data %>%
+    filter(
+      treated_group,  # only treated units
+      relative_time >= min_time,
+      relative_time <= max_time
+    ) %>%
+    mutate(
+      panel = "2. Event Time",
+      vline = 0  # Store zero for vertical line
+    )
+  
+  # 3. Group averages by relative time
+  p3_data <- base_data %>%
+    filter(relative_time >= min_time, relative_time <= max_time) %>%
+    group_by(relative_time, treated_group) %>%
+    summarize(
+      value = mean(value),
+      .groups = 'drop'
+    ) %>%
+    mutate(
+      panel = "3. Group Averages",
+      country = if_else(treated_group, "Treated", "Control"),  # for legend
+      vline = 0  # Store zero for vertical line
+    )
+  
+  # Combine all data
+  plot_data <- bind_rows(
+    p1_data,
+    p2_data,
+    p3_data
+  ) %>%
+    mutate(panel = factor(panel, levels = c(
+      "1. Original Time Series",
+      "2. Event Time",
+      "3. Group Averages"
+    )))
+  
+  return(plot_data)
+}
+
+# Create event study plot
+create_event_study_plot <- function(data) {
+  # Create vertical line data
+  vlines <- bind_rows(
+    # Treatment timing for panel 1
+    data %>% 
+      filter(panel == "1. Original Time Series", !is.infinite(cohort)) %>%
+      distinct(panel, cohort) %>%
+      rename(xint = cohort),
+    # Zero line for panels 2 & 3
+    data %>%
+      filter(panel != "1. Original Time Series") %>%
+      distinct(panel) %>%
+      mutate(xint = 0)
+  )
+  
+  # Base plot
+  p <- ggplot() +
+    # Panel 1: Original time series
+    geom_line(data = filter(data, panel == "1. Original Time Series"),
+              aes(x = year, y = value, color = country, group = country)) +
+    geom_point(data = filter(data, panel == "1. Original Time Series"),
+               aes(x = year, y = value, color = country)) +
+    
+    # Panel 2: Event time data
+    geom_line(data = filter(data, panel == "2. Event Time"),
+              aes(x = relative_time, y = value, color = country, group = country)) +
+    geom_point(data = filter(data, panel == "2. Event Time"),
+               aes(x = relative_time, y = value, color = country)) +
+    
+    # Panel 3: Group averages
+    geom_line(data = filter(data, panel == "3. Group Averages"),
+              aes(x = relative_time, y = value, color = country, group = country),
+              size = 1) +
+    geom_point(data = filter(data, panel == "3. Group Averages"),
+               aes(x = relative_time, y = value, color = country),
+               size = 2) +
+    
+    # Add vertical lines using consistent data-driven approach
+    geom_vline(data = vlines,
+               aes(xintercept = xint),
+               linetype = "dashed") +
+    
+    # Faceting and theme
+    facet_wrap(~panel, scales = "free_x", ncol = 3) +
+    theme_minimal() +
+    theme(
+      strip.text = element_text(size = 11, face = "bold"),
+      legend.position = "bottom",
+      panel.grid.major = element_line(color = "grey90"),
+      panel.grid.minor = element_blank(),
+      axis.text = element_text(size = 9),
+      axis.title = element_text(size = 10)
+    ) +
+    scale_y_continuous(breaks = seq(-1000, max(data$value) + 1000, by = 1000), 
+                       expand = c(0, 0),
+                       limits = c(-1000, max(data$value) + 1000)) +
+    labs(x = "Time", y = "Value", color = "Group")
+  
+  return(p)
+}
+# Updated run_models function
+run_models <- function(data, input) {
+  # First difference data preparation
+  fd_data <- data %>% 
+    group_by(country) %>%
+    mutate(
+      value_diff = value - lag(value),
+      treatment_diff = treatment - lag(treatment)
+    ) %>% 
+    filter(!is.na(value_diff))
+  
+  # Event study data preparation with dynamic min/max time
+  data_event <- data %>%
+    group_by(country) %>%
+    mutate(
+      value_diff = value - lag(value),
+      rel_year = factor(
+        case_when(
+          relative_time < input$min_event_time ~ paste("<", input$min_event_time),
+          relative_time > input$max_event_time ~ paste(">", input$max_event_time),
+          TRUE ~ as.character(relative_time)
+        ),
+        levels = c(
+          paste("<", input$min_event_time),
+          as.character(input$min_event_time:input$max_event_time),
+          paste(">", input$max_event_time)
+        )
+      )
+    ) %>%
+    filter(!is.infinite(cohort) | is.infinite(relative_time)) %>%
+    filter(!is.na(value_diff))
+  
+  # [Rest of the function remains the same]
   
   # Model specifications
   if(input$year_fe) {

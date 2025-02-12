@@ -12,6 +12,26 @@ function(input, output, session) {
     }
   })
   
+  # Validate event time window
+  observe({
+    if (input$min_event_time >= -1) {
+      updateSliderInput(session, "min_event_time", value = -2)
+      showModal(modalDialog(
+        title = "Invalid Event Window",
+        "Minimum event time must be less than -1 (the reference period)",
+        easyClose = TRUE
+      ))
+    }
+    if (input$max_event_time <= 1) {
+      updateSliderInput(session, "max_event_time", value = 2)
+      showModal(modalDialog(
+        title = "Invalid Event Window",
+        "Maximum event time must be greater than 1",
+        easyClose = TRUE
+      ))
+    }
+  })
+  
   # Generate reactive dataset
   data <- reactive({
     generate_data(input)
@@ -22,6 +42,19 @@ function(input, output, session) {
     req(input$run_twfe)
     isolate({
       run_twfe_transform(data())
+    })
+  })
+  
+  # Event study transformation reactive
+  event_study_data <- reactive({
+    req(input$run_event_study)
+    req(input$num_shocks == "1")  # Only run for single intervention
+    isolate({
+      transform_event_study_data(
+        data(), 
+        input$min_event_time, 
+        input$max_event_time
+      )
     })
   })
   
@@ -67,4 +100,36 @@ function(input, output, session) {
       sep = "\n"
     )
   })
+  
+  # Event Study plot output
+  output$event_study_plot <- renderPlotly({
+    req(event_study_data())
+    p <- create_event_study_plot(event_study_data())
+    ggplotly(p, height = 400) |>  # Set consistent height
+      layout(
+        margin = list(l = 50, r = 50, b = 50, t = 50),  # Adjust margins
+        showlegend = TRUE
+      )
+  })
+  
+  # Event Study explanation output
+  output$event_study_explanation <- renderText({
+    req(input$run_event_study)
+    paste(
+      "1. Original Data: Shows the raw time series with vertical lines marking treatment timing.",
+      "2. Recentered Around Event: Shows the same data with time recentered around the treatment (time 0).",
+      "3. Treatment vs Control: Shows the difference between treated and control group averages over event time.",
+      sep = "\n"
+    )
+  })
+  
+  # Download handler
+  output$downloadData <- downloadHandler(
+    filename = function() {
+      paste("panel_data_", Sys.Date(), ".csv", sep = "")
+    },
+    content = function(file) {
+      write.csv(data(), file, row.names = FALSE)
+    }
+  )
 }

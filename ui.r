@@ -5,21 +5,16 @@ library(plotly)
 # UI Definition
 ui <- fluidPage(
   titlePanel("Gabor's Panel Models Estimation Comparison"),
-
+  
   # Add description panel at the top
   fluidRow(
     column(12,
            div(
              class = "well",
              style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
-             p("v0.2 2025-02-12. In development as part of",
-               tags$a(
-                 href = "https://gabors-data-analysis.com/getting-started",
-                 target = "_blank",
-                 "Gabors Data Analysis project"                )),
-          p("Suggestions: contact ",
-               tags$a(
-                 href = "mailto:bekesg@ceu.edu", "Gabor"),
+             p(
+               "v0.1 2025-02-10. In development. Suggestions: contact ",
+               tags$a(href = "mailto:bekesg@ceu.edu", "Gabor"),
                " / add an issue to ",
                tags$a(
                  href = "https://github.com/gabors-data-analysis/did-simulation/",
@@ -33,7 +28,7 @@ ui <- fluidPage(
            )
     )
   ),
-
+  
   sidebarLayout(
     sidebarPanel(
       # Main controls
@@ -51,6 +46,18 @@ ui <- fluidPage(
       checkboxInput("year_fe", "Include Year Fixed Effects", FALSE),
       checkboxInput("country_fe_fd", "Add Country FE to First Difference Model", FALSE),
       
+      # Event Study Controls
+      tags$hr(),
+      tags$h4("Event Study Settings"),
+      
+      # Relative time window controls
+      sliderInput("min_event_time", "Minimum Event Time:",
+                  min = -10, max = -1, value = -3, step = 1),
+      sliderInput("max_event_time", "Maximum Event Time:",
+                  min = 1, max = 10, value = 3, step = 1),
+      
+      # Rest of the controls
+      tags$hr(),
       radioButtons("num_shocks", "Number of Shocks:",
                    choices = c("One" = "1",
                                "Two (Same Effect)" = "2_same",
@@ -86,7 +93,7 @@ ui <- fluidPage(
                   "100,200,300,400,0,0")
       )
     ),
-
+    
     mainPanel(
       plotlyOutput("did_plot"),
       
@@ -100,15 +107,39 @@ ui <- fluidPage(
       
       verbatimTextOutput("model_results"),
       
+      # TWFE Transformation Section
       tags$hr(),
       tags$h3("Illustrating TWFE: Removing Fixed Effects"),
       tags$p("This section demonstrates how the TWFE model works step by step by removing country and year fixed effects."),
       
       actionButton("run_twfe", "Show TWFE Transformation"),
-      
       plotlyOutput("twfe_plot"),
-      
       textOutput("twfe_explanation"),
+      
+      # Event Study Transformation Section
+      tags$hr(),
+      tags$h3("Event Study Design: Data Transformation"),
+      tags$p("This section illustrates how event study analysis transforms the data to estimate dynamic treatment effects."),
+      
+      # Only show event study for single intervention
+      conditionalPanel(
+        condition = "input.num_shocks == '1'",
+        actionButton("run_event_study", "Show Event Study Transformation"),
+        div(style = "margin: 20px 0;"),
+        plotlyOutput("event_study_plot"),
+        div(style = "margin: 20px 0;"),
+        plotlyOutput("event_coef_plot"),
+        textOutput("event_study_explanation")
+      ),
+      
+      # Warning message for multiple interventions
+      conditionalPanel(
+        condition = "input.num_shocks != '1'",
+        div(
+          style = "background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0;",
+          p("Event study visualization is only available for single intervention scenarios.")
+        )
+      ),
       
       textOutput("warning_message"),
       downloadButton("downloadData", "Download Data"),
