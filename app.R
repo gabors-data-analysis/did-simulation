@@ -280,37 +280,45 @@ server <- function(input, output, session) {
   
   # TWFE Transformation Steps
   run_twfe_transform <- reactive({
-    req(input$run_twfe)  # Ensure it only runs when the button is clicked
+    req(input$run_twfe)  # Ensure this only runs when the button is clicked
     
     isolate({
       data <- generate_data()
       
-      # Step 1: Raw data
+      # Step 1: Raw Data (Baseline)
       raw_data <- data %>%
-        mutate(transformation = "Raw Data")
+        mutate(transformation = "1. Raw Data")
       
-      # Step 2: Remove Country FE
+      # Step 2: Remove Country FE (Within-Country Variation)
       country_means <- data %>%
         group_by(country) %>%
-        summarize(country_avg = mean(value))
+        summarize(country_avg = mean(value), .groups = 'drop')
       
       country_adjusted <- data %>%
         left_join(country_means, by = "country") %>%
-        mutate(value = value - country_avg, transformation = "Country FE Removed")
+        mutate(value = value - country_avg,
+               transformation = "2. Country FE Removed")
       
-      # Step 3: Remove Year FE
+      # Step 3: Remove Country & Year FE (Final TWFE-Adjusted Data)
       year_means <- country_adjusted %>%
         group_by(year) %>%
-        summarize(year_avg = mean(value))
+        summarize(year_avg = mean(value), .groups = 'drop')
       
       final_data <- country_adjusted %>%
         left_join(year_means, by = "year") %>%
-        mutate(value = value - year_avg, transformation = "Year FE Removed")
+        mutate(value = value - year_avg,
+               transformation = "3. Country & Year FE Removed")
       
-      twfe_data <- bind_rows(raw_data, country_adjusted, final_data)
+      # Combine all steps in the correct order
+      twfe_data <- bind_rows(raw_data, country_adjusted, final_data) %>%
+        mutate(transformation = factor(transformation, 
+                                       levels = c("1. Raw Data", 
+                                                  "2. Country FE Removed", 
+                                                  "3. Country & Year FE Removed")))
       
       return(twfe_data)
     })
+  
   })
   
   
@@ -429,7 +437,6 @@ server <- function(input, output, session) {
   
   
   # new code
-  # Plot TWFE Step by Step
   output$twfe_plot <- renderPlotly({
     req(input$run_twfe)  # Only runs when button is clicked
     twfe_data <- run_twfe_transform()
@@ -437,7 +444,7 @@ server <- function(input, output, session) {
     p <- ggplot(twfe_data, aes(x = year, y = value, color = country)) +
       geom_line() +
       geom_point() +
-      facet_wrap(~transformation, nrow = 1) +
+      facet_wrap(~transformation, nrow = 1) +  # Order controlled by factor levels
       theme_minimal() +
       labs(title = "TWFE Transformation: Step-by-Step Fixed Effects Removal",
            x = "Year", y = "Adjusted Outcome")
@@ -450,8 +457,8 @@ server <- function(input, output, session) {
     req(input$run_twfe)
     paste(
       "1. Raw Data: Observed sales by country over time.",
-      "2. Country FE Removed: Within-country deviations from mean.",
-      "3. Year FE Removed: Adjusted values capturing within-country, within-year variation.",
+      "2. Country FE Removed: Adjusted for country-level differences, showing within-country variation.",
+      "3. Country & Year FE Removed: Adjusted for both country and year effects, isolating within-country, within-year variation.",
       sep = "\n"
     )
   })
