@@ -262,21 +262,8 @@ transform_event_study_data <- function(data, min_time, max_time) {
       vline = 0
     )
   
-  # 3. Create both individual lines and averages
-  # First, get individual control countries
-  p3_individuals <- base_data %>%
-    filter(
-      relative_time >= min_time,
-      relative_time <= max_time,
-      !treated_group  # only control units
-    ) %>%
-    mutate(
-      panel = "3. Group Averages",
-      vline = 0
-    )
-  
-  # Then, get group averages
-  p3_averages <- base_data %>%
+  # 3. Group averages only
+  p3_data <- base_data %>%
     filter(relative_time >= min_time, relative_time <= max_time) %>%
     group_by(relative_time, treated_group) %>%
     summarize(
@@ -285,7 +272,7 @@ transform_event_study_data <- function(data, min_time, max_time) {
     ) %>%
     mutate(
       panel = "3. Group Averages",
-      country = if_else(treated_group, "Treated (Avg)", "Control (Avg)"),
+      country = if_else(treated_group, "Treated Average", "Control Average"),
       vline = 0
     )
   
@@ -293,8 +280,7 @@ transform_event_study_data <- function(data, min_time, max_time) {
   plot_data <- bind_rows(
     p1_data,
     p2_data,
-    p3_individuals,
-    p3_averages
+    p3_data
   ) %>%
     mutate(panel = factor(panel, levels = c(
       "1. Original Time Series",
@@ -313,6 +299,10 @@ create_event_study_plot <- function(data) {
     distinct(panel, vline) %>%
     rename(xint = vline)
   
+  # Get axis breaks
+  year_breaks <- sort(unique(filter(data, panel == "1. Original Time Series")$year))
+  relative_breaks <- sort(unique(filter(data, panel != "1. Original Time Series")$relative_time))
+  
   # Base plot
   p <- ggplot() +
     # Panel 1: Original time series with all countries
@@ -321,24 +311,21 @@ create_event_study_plot <- function(data) {
     geom_point(data = filter(data, panel == "1. Original Time Series"),
                aes(x = year, y = value, color = country)) +
     
-    
     # Panel 2: Event time data with all countries
     geom_line(data = filter(data, panel == "2. Event Time"),
               aes(x = relative_time, y = value, color = country, group = country)) +
     geom_point(data = filter(data, panel == "2. Event Time"),
                aes(x = relative_time, y = value, color = country)) +
     
-    # Panel 3: Group averages (thicker lines)
-    geom_line(data = filter(data, panel == "3. Group Averages", 
-                            str_detect(country, "Avg")),
+    # Panel 3: Group averages
+    geom_line(data = filter(data, panel == "3. Group Averages"),
               aes(x = relative_time, y = value, color = country, group = country),
               size = 1.5) +
-    geom_point(data = filter(data, panel == "3. Group Averages", 
-                             str_detect(country, "Avg")),
+    geom_point(data = filter(data, panel == "3. Group Averages"),
                aes(x = relative_time, y = value, color = country),
                size = 3) +
     
-    # Add vertical lines using consistent data-driven approach
+    # Add vertical lines
     geom_vline(data = vlines,
                aes(xintercept = xint),
                linetype = "dashed") +
@@ -357,11 +344,25 @@ create_event_study_plot <- function(data) {
     scale_y_continuous(breaks = seq(-1000, max(data$value) + 1000, by = 1000), 
                        expand = c(0, 0),
                        limits = c(-1000, max(data$value) + 1000)) +
+    # Custom x-axis labels for each panel
+    scale_x_continuous(breaks = function(x) {
+      if(x[2] > 2000) {  # Panel 1 (years)
+        year_breaks
+      } else {  # Panels 2 & 3 (relative time)
+        relative_breaks
+      }
+    },
+    labels = function(x) {
+      if(x[1] > 2000) {  # Panel 1 (years)
+        paste0("'", substr(as.character(x), 3, 4))
+      } else {  # Panels 2 & 3 (relative time)
+        x
+      }
+    }) +
     labs(x = "Time", y = "Value", color = "Group")
   
   return(p)
 }
-
 
 # Updated run_models function
 run_models <- function(data, input) {
