@@ -1,3 +1,17 @@
+# This is a shiny app to show how variation in interventions are estimated in two different models: TWFE and DiD. 
+# Let us have 6 countries, A to F. and 11 time periods 2010 to 2020. 
+# Outcome (y) is sales of sugary drinks, set at a 1000,  b 2000, c 4000, d 5000, e 3000, f 6000. E and F and controls, no intervention. 
+# When the intervention happens at once, it is 2015. When staggered it is 2013, 2014, 2016 and 2017. 
+# Uniform intervention effect is -1000. Heterogenous is -500, -1500, -500, -1500. 
+
+# Now I want the app to create a graph and show regression results. 
+# We'll have 4 models. TWFE, TWFD (first difference) and event time for Staggered DiD. The last will be as in Callaway and sant'anna or sun and abraham
+# I want users to be able to set the following aspects: time: once or staggered. size: uniform or heterogenous. 
+# Checkbox if early interventions are smaller (ie -500, -500, -1500, -1500). 
+# Checkbox if global trend: instead of fixed at values, every year consumption rises by 100.  
+# Checkbox if individual trend: global rise + annual + 100,200,300,400, 0, 0. 
+# It would be great if all these values could also be set once user clicks on a 'under the hood' bottom.
+
 # Load required packages
 library(shiny)
 library(plotly)
@@ -13,13 +27,22 @@ ui <- fluidPage(
              class = "well",
              style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
              p(
-               "v0.1 2025-02-10. In development. Suggestions: contact ",
+               "v0.2 2025-02-12. In development. Suggestions: contact ",
                tags$a(href = "mailto:bekesg@ceu.edu", "Gabor"),
                " / add an issue to ",
                tags$a(
                  href = "https://github.com/gabors-data-analysis/did-simulation/",
                  target = "_blank",
                  "repo"                )),
+             p("This is part of Gabors Data Analysis ecosystem.", tags$a(
+               href = "https://gabors-data-analysis.com/chapters/#chapter-23-methods-for-panel-data",
+               target = "_blank",
+               "Chapter 23 (panel data)") , 
+               tags$a(
+                 href = "https://gabors-data-analysis.com/chapters/#chapter-24-appropriate-control-groups-for-panel-data",
+                 target = "_blank",
+                 "Chapter 24 (event studies)")
+               ) ,            
              p("When you observe many units over time and want understand the effect of some policy change, you consider TWFE or FD panel models or do an event study design for first differences. This is a toy simulation to illustrate some points."),
              p("This is a panel estimation illustration. Imagine we have 6 countries, A to F, and 13 time periods 2010 to 2022. 
           Outcome (y) is average per capita sales of sugary drinks (ml/week), set at a 1000, b 2000, c 4000, d 5000, e 3000, f 6000. 

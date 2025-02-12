@@ -1,3 +1,15 @@
+
+# Install and load required packages
+
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+if (!require(tidyverse)) install.packages("tidyverse")
+if (!require(fixest)) install.packages("fixest") 
+if (!require(plotly)) install.packages("plotly")
+if (!require(broom)) install.packages("broom")
+if (!require(shiny)) install.packages("shiny")
+if (!require(gridExtra)) install.packages("gridExtra")
+
 # Load required packages
 library(shiny)
 library(tidyverse)
