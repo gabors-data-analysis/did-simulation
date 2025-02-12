@@ -8,7 +8,10 @@ library(gridExtra)
 
 
 
+#########################################
 # Data generation function
+#########################################
+
 generate_data <- function(input) {
   years <- 2010:2022
   countries <- LETTERS[1:6]
@@ -100,38 +103,77 @@ generate_data <- function(input) {
   return(data)
 }
 
-# TWFE transformation function
+
+#########################################
+# Enhanced TWFE transformation function
+#########################################
+
 run_twfe_transform <- function(data) {
   # Step 1: Raw Data (Baseline)
   raw_data <- data %>%
     mutate(transformation = "1. Raw Data")
   
-  # Step 2: Remove Country FE
-  country_means <- data %>%
+  # Step 2: Calculate and Remove Unit (Country) FE
+  unit_fe <- data %>%
     group_by(country) %>%
-    summarize(country_avg = mean(value), .groups = 'drop')
+    summarize(
+      unit_fe = mean(value),
+      pre_treatment_mean = mean(value[treatment == 0]),
+      post_treatment_mean = mean(value[treatment > 0]),
+      treatment_effect = post_treatment_mean - pre_treatment_mean,
+      .groups = 'drop'
+    )
   
-  country_adjusted <- data %>%
-    left_join(country_means, by = "country") %>%
-    mutate(value = value - country_avg,
-           transformation = "2. Country FE Removed")
+  unit_adjusted <- data %>%
+    left_join(unit_fe, by = "country") %>%
+    mutate(
+      value_unit_adjusted = value - unit_fe,
+      transformation = "2. Unit FE Removed"
+    )
   
-  # Step 3: Remove Country & Year FE
-  year_means <- country_adjusted %>%
+  # Step 3: Calculate and Remove Time FE
+  time_fe <- unit_adjusted %>%
     group_by(year) %>%
-    summarize(year_avg = mean(value), .groups = 'drop')
+    summarize(
+      time_fe = mean(value_unit_adjusted),
+      treated_mean = mean(value_unit_adjusted[treatment > 0]),
+      control_mean = mean(value_unit_adjusted[treatment == 0]),
+      .groups = 'drop'
+    )
   
-  final_data <- country_adjusted %>%
-    left_join(year_means, by = "year") %>%
-    mutate(value = value - year_avg,
-           transformation = "3. Country & Year FE Removed")
+  final_data <- unit_adjusted %>%
+    left_join(time_fe, by = "year") %>%
+    mutate(
+      value_final = value_unit_adjusted - time_fe,
+      transformation = "3. Unit & Time FE Removed"
+    )
   
-  # Combine all steps
-  twfe_data <- bind_rows(raw_data, country_adjusted, final_data) %>%
-    mutate(transformation = factor(transformation, 
-                                   levels = c("1. Raw Data", 
-                                              "2. Country FE Removed", 
-                                              "3. Country & Year FE Removed")))
+  # Step 4: Calculate Treatment Effect Components
+  treatment_components <- final_data %>%
+    filter(treatment > 0) %>%
+    group_by(country) %>%
+    summarize(
+      avg_treatment_effect = mean(value_final),
+      timing_component = mean(value_final) - mean(value_final[year == min(year[treatment > 0])]),
+      heterogeneity_component = mean(value_final) - mean(value_final[treatment == 1]),
+      .groups = 'drop'
+    )
+  
+  # Combine all steps with components
+  twfe_data <- bind_rows(
+    raw_data %>% select(year, country, value, transformation),
+    unit_adjusted %>% select(year, country, value = value_unit_adjusted, transformation),
+    final_data %>% select(year, country, value = value_final, transformation)
+  ) %>%
+    left_join(unit_fe, by = "country") %>%
+    left_join(time_fe, by = "year") %>%
+    left_join(treatment_components, by = "country") %>%
+    mutate(
+      transformation = factor(transformation,
+                              levels = c("1. Raw Data",
+                                         "2. Unit FE Removed",
+                                         "3. Unit & Time FE Removed"))
+    )
   
   return(twfe_data)
 }
@@ -153,7 +195,10 @@ create_did_plot <- function(data) {
   return(p)
 }
 
+#########################################
 # Run regression models
+#########################################
+
 run_models <- function(data, input) {
   # First difference data preparation
   fd_data <- data %>% 
@@ -229,6 +274,10 @@ run_models <- function(data, input) {
     event = event_model
   ))
 }
+
+####################################################################
+# Event Study Transformation Functions
+####################################################################
 
 
 # Transform data for event study visualization
