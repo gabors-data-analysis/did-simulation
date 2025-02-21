@@ -138,11 +138,17 @@ function(input, output, session) {
   output$model_results <- renderPrint({
     models <- run_models(data(), input)
     
-    etable(models$twfe, models$fd, models$event,
-           headers = c("FE", "First Difference", "Event Study FD (t=0)"),
-           drop = c("Constant", "rel_year = -3", "rel_year = -2", "rel_year = -1",  "rel_year = 1", 
-                    "rel_year = 2", "rel_year = 3", "pre", "post", "Intercept"),
-           signif.code = NA)
+    if(input$num_shocks == "1") {
+      etable(models$twfe, models$fd, models$event,
+             headers = c("FE", "First Difference", "Event Study FD"),
+             drop = c("Constant", "Intercept"), # Keep lag coefficients
+             signif.code = NA)
+    } else {
+      etable(models$twfe, models$fd,
+             headers = c("FE", "First Difference"),
+             drop = c("Constant", "Intercept"),
+             signif.code = NA)
+    }
   })
   
   # TWFE plot output - now runs automatically

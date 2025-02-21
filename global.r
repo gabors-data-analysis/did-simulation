@@ -468,6 +468,7 @@ create_event_study_plot <- function(data) {
   return(p)
 }
 
+
 # Updated run_models function
 # Updated run_models function
 run_models <- function(data, input) {
@@ -515,7 +516,6 @@ run_models <- function(data, input) {
     filter(!is.infinite(cohort) | is.infinite(relative_time)) %>%
     filter(!is.na(value_diff))
   
-  
   # Model specifications
   if(input$year_fe) {
     twfe_model <- feols(value ~ treatment | country + year, 
@@ -547,11 +547,13 @@ run_models <- function(data, input) {
     }
   }
   
-  # Event study model
+  # Event study model - now using properly formatted relative time indicators
   if(input$num_shocks == "1") {
-    event_model <- feols(value_diff ~ i(rel_year, ref = "-1"), 
+    # Using relative time directly with i() function which is more reliable
+    # We'll use -1 as the reference period as before
+    event_model <- feols(value_diff ~ i(relative_time, ref = -1), 
                          cluster = "country",
-                         data = data_event)
+                         data = filter(data_event, relative_time >= -3 & relative_time <= 3))
   } else {
     event_model <- feols(value_diff ~ 1, 
                          cluster = "country",

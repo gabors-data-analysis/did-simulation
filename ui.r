@@ -27,7 +27,7 @@ ui <- fluidPage(
              class = "well",
              style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
              p(
-               "v0.3 2025-02-21. In development. Suggestions: contact ",
+               "v0.3.2 2025-02-21. In development. Suggestions: contact ",
                tags$a(href = "mailto:bekesg@ceu.edu", "Gabor"),
                " / add an issue to ",
                tags$a(
@@ -44,9 +44,10 @@ ui <- fluidPage(
                  "Chapter 24 (event studies)")
              ) ,            
              p("When you observe many units over time and want understand the effect of some policy change, you consider TWFE or FD panel models or do an event study design for first differences. This is a toy simulation to illustrate some points."),
-             p("This is a panel estimation illustration. Imagine we have 6 countries, A to F, and 13 time periods 2010 to 2022. 
-                Outcome (y) is average per capita sales of sugary drinks (ml/week), set at a 1000, b 2000, c 4000, d 5000, e 3000, f 6000. 
-                E and F are controls, no intervention. The intervention is a 1 dollar sales tax. The true effect of the tax cuts consumption by -1000 as default. You can set many aspects of the intervention: size, timing, you can even have 2. You can add noise.")
+             p("This is a panel estimation illustration. Imagine we have 6 countries, A to F, and 13 time periods 2010 to 2022."), 
+             p("Outcome (y) is average per capita sales of sugary drinks (ml/week), set at a 1000, b 2000, c 4000, d 5000, e 3000, f 6000. E and F are controls, no intervention. "),
+             p("The intervention is a 1 dollar sales tax. The true effect of the tax cuts consumption by -1000 as default."), 
+             p("You can set many aspects of the intervention: size, timing, you can even have 2. You can add noise. You can also add dynamics (time to build), and reversal. ")
            )
     )
   ),
@@ -90,10 +91,7 @@ ui <- fluidPage(
                                         "Heterogeneous" = "heterogeneous")),
                
                checkboxInput("early_smaller", "Early interventions are smaller", FALSE),
-               checkboxInput("global_trend", "Include global trend", FALSE),
-               checkboxInput("individual_trend", "Include individual trends", FALSE),
                
-               # New options
                checkboxInput("dynamic_effect", "Dynamic effect build-up", FALSE),
                tags$span(
                  style = "font-size: 0.8em; color: #6c757d; display: block; margin-top: -10px; margin-bottom: 10px;",
@@ -104,23 +102,15 @@ ui <- fluidPage(
                tags$span(
                  style = "font-size: 0.8em; color: #6c757d; display: block; margin-top: -10px; margin-bottom: 10px;",
                  "When enabled, treatment effect disappears after specified years."
-               ))
+               ),
+               h4("Other Factors (trends)"),
+               
+               checkboxInput("global_trend", "Include global trend", FALSE),
+               checkboxInput("individual_trend", "Include individual trends", FALSE)
+               
+               )
     ),
     
-    column(3,
-           # Model settings
-           div(class = "well",
-               h4("Model Settings"),
-               checkboxInput("year_fe", "Include Year Fixed Effects", FALSE),
-               checkboxInput("country_fe_fd", "Add Country FE to First Difference Model", FALSE),
-               
-               # Event Study Controls
-               h4("Event Study Settings"),
-               sliderInput("min_event_time", "Minimum Event Time:",
-                           min = -10, max = -1, value = -3, step = 1),
-               sliderInput("max_event_time", "Maximum Event Time:",
-                           min = 1, max = 10, value = 3, step = 1))
-    ),
     
     column(3,
            # Treatment complexity settings
@@ -141,7 +131,24 @@ ui <- fluidPage(
                sliderInput("noise_sd", "Noise SD:", 
                            min = 0, max = 1000, value = 0, step = 50))
     ),
+  
+    column(3,
+           # Model settings
+           div(class = "well",
+               h4("Model Settings"),
+               checkboxInput("year_fe", "Include Year Fixed Effects", FALSE),
+               checkboxInput("country_fe_fd", "Add Country FE to First Difference Model", FALSE),
+               
+               # Event Study Controls
+               h4("Event Study Settings"),
+               sliderInput("min_event_time", "Minimum Event Time:",
+                           min = -10, max = -1, value = -3, step = 1),
+               sliderInput("max_event_time", "Maximum Event Time:",
+                           min = 1, max = 10, value = 3, step = 1))
+    ),
     
+    
+      
     column(3,
            # Advanced settings
            div(class = "well",
