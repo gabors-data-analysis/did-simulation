@@ -457,8 +457,7 @@ run_models <- function(data, input) {
     filter(!is.infinite(cohort) | is.infinite(relative_time)) %>%
     filter(!is.na(value_diff))
   
-  # [Rest of the function remains the same]
-  
+
   # Model specifications
   if(input$year_fe) {
     twfe_model <- feols(value ~ treatment | country + year, 
@@ -507,3 +506,37 @@ run_models <- function(data, input) {
     event = event_model
   ))
 }
+
+# Create PanelView heatmap function
+create_panel_view <- function(data) {
+  # Create a simplified dataset for the heatmap
+  panel_data <- data %>%
+    select(year, country, treatment) %>%
+    mutate(
+      treatment_status = case_when(
+        treatment == 0 ~ "No treatment",
+        treatment == 1 ~ "Treated once",
+        treatment == 2 ~ "Treated twice",
+        TRUE ~ NA_character_
+      ),
+      treatment_status = factor(treatment_status, 
+                                levels = c("No treatment", "Treated once", "Treated twice"))
+    )
+  
+  # Create a heatmap using ggplot2
+  p <- ggplot(panel_data, aes(x = year, y = country, fill = treatment_status)) +
+    geom_tile(color = "white", size = 0.5) +
+    scale_fill_manual(values = c("No treatment" = "#f0f8ff", 
+                                 "Treated once" = "#6495ed", 
+                                 "Treated twice" = "#000080")) +
+    theme_minimal() +
+    theme(panel.grid = element_blank(),
+          axis.text.x = element_text(angle = 0),
+          legend.position = "bottom") +
+    scale_x_continuous(breaks = 2010:2022) +
+    labs(title = "Treatment Status by Country and Year",
+         x = "Year", y = "Country", fill = "Treatment Status")
+  
+  return(p)
+}
+
