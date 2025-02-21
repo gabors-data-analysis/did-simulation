@@ -158,20 +158,18 @@ ui <- fluidPage(
     )
   ),
   
-  # TWFE Transformation Section
+  # TWFE Transformation Section - no button needed
   fluidRow(
     column(12,
            tags$hr(),
            tags$h3("Illustrating TWFE: Removing Fixed Effects"),
            tags$p("This section demonstrates how the TWFE model works step by step by removing country and year fixed effects."),
-           
-           actionButton("run_twfe", "Show TWFE Transformation"),
            plotlyOutput("twfe_plot"),
            textOutput("twfe_explanation")
     )
   ),
   
-  # Event Study Transformation Section
+  # Event Study Transformation Section - no button needed
   fluidRow(
     column(12,
            tags$hr(),
@@ -181,7 +179,6 @@ ui <- fluidPage(
            # Only show event study for single intervention
            conditionalPanel(
              condition = "input.num_shocks == '1'",
-             actionButton("run_event_study", "Show Event Study Transformation"),
              div(style = "margin: 20px 0;"),
              plotlyOutput("event_study_plot"),
              div(style = "margin: 20px 0;"),
