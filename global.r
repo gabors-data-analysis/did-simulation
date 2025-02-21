@@ -112,13 +112,27 @@ generate_data <- function(input) {
         treated & post & !post_second ~ 1,
         treated & post & post_second ~ 2,
         TRUE ~ 0
-      ),
-      
-      # Calculate reversal timing
-      reversal_year = if_else(input$reversal, cohort + years_to_reversal, Inf),
-      post_reversal = !is.infinite(reversal_year) & year >= reversal_year,
-      
-      # Apply effect considering dynamic effect and reversal
+      )
+    )
+  
+  # Add reversal calculation - Fixed to handle vector properly
+  if (input$reversal) {
+    data <- data %>%
+      mutate(
+        reversal_year = cohort + years_to_reversal,
+        post_reversal = !is.infinite(reversal_year) & year >= reversal_year
+      )
+  } else {
+    data <- data %>%
+      mutate(
+        reversal_year = Inf,
+        post_reversal = FALSE
+      )
+  }
+  
+  # Apply effect considering dynamic effect and reversal
+  data <- data %>%
+    mutate(
       effect = case_when(
         treatment == 0 ~ 0,
         treatment == 1 & post_reversal & input$reversal ~ 0,  # Reversal: effect goes to zero
