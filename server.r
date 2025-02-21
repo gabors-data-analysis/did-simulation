@@ -155,17 +155,68 @@ function(input, output, session) {
   output$twfe_plot <- renderPlotly({
     req(twfe_data())
     
-    p <- ggplot(twfe_data(), aes(x = year, y = value, color = country)) +
+    # Create list to store plots
+    plots <- list()
+    
+    # Get data for each transformation
+    data_raw <- twfe_data() %>% filter(transformation == "1. Raw Data")
+    data_unit <- twfe_data() %>% filter(transformation == "2. Unit FE Removed")
+    data_both <- twfe_data() %>% filter(transformation == "3. Unit & Time FE Removed")
+    
+    # Plot 1: Raw data (original y limits)
+    p1 <- ggplot(data_raw, aes(x = year, y = value, color = country)) +
       geom_line() +
       geom_point() +
-      facet_wrap(~transformation, nrow = 1) +
       theme_minimal() +
-      theme(legend.position = "bottom") +
-      labs(title = "TWFE Transformation: Step-by-Step Fixed Effects Removal",
-           x = "Year", y = "Adjusted Outcome")
+      theme(legend.position = "none") +
+      ggtitle("1. Raw Data") +
+      labs(x = "Year", y = "Value")
     
-    ggplotly(p) %>%
-      layout(legend = list(orientation = "h", y = -0.2))
+    # Plot 2: Unit FE removed (fixed y limits: -4000 to 4000)
+    p2 <- ggplot(data_unit, aes(x = year, y = value, color = country)) +
+      geom_line() +
+      geom_point() +
+      theme_minimal() +
+      theme(legend.position = "none") +
+      ylim(-4000, 4000) +
+      ggtitle("2. Unit FE Removed") +
+      labs(x = "Year", y = "Value")
+    
+    # Plot 3: Both FE removed (fixed y limits: -4000 to 4000)
+    p3 <- ggplot(data_both, aes(x = year, y = value, color = country)) +
+      geom_line() +
+      geom_point() +
+      theme_minimal() +
+      theme(legend.position = "none") +
+      ylim(-4000, 4000) +
+      ggtitle("3. Unit & Time FE Removed") +
+      labs(x = "Year", y = "Value")
+    
+    # Combine plots with shared legend
+    fig <- subplot(
+      ggplotly(p1, tooltip = c("country", "year", "value")),
+      ggplotly(p2, tooltip = c("country", "year", "value")),
+      ggplotly(p3, tooltip = c("country", "year", "value")),
+      nrows = 1, 
+      shareX = TRUE,
+      titleX = TRUE,
+      titleY = TRUE
+    )
+    
+    # Keep only one legend by making the second and third plots invisible in the legend
+    for (i in seq_len(length(fig$data))) {
+      if (i > 6) {  # First 6 traces are from the first plot (6 countries)
+        fig$data[[i]]$showlegend <- FALSE
+      }
+    }
+    
+    # Set the overall layout
+    fig <- fig %>% layout(
+      title = "TWFE Transformation: Step-by-Step Fixed Effects Removal",
+      legend = list(orientation = "h", y = -0.2, x = 0.5, xanchor = "center")
+    )
+    
+    return(fig)
   })
   
   # TWFE explanation output
