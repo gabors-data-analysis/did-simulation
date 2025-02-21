@@ -61,13 +61,15 @@ function(input, output, session) {
   # Main plot output
   output$did_plot <- renderPlotly({
     p <- create_did_plot(data())
-    ggplotly(p)
+    ggplotly(p) %>%
+      layout(legend = list(orientation = "h", y = -0.2))
   })
   
   # NEW: PanelView plot output
   output$panel_view <- renderPlotly({
     p <- create_panel_view(data())
-    ggplotly(p)
+    ggplotly(p) %>%
+      layout(legend = list(orientation = "h", y = -0.2))
   })
   
   # Model results output
@@ -90,10 +92,12 @@ function(input, output, session) {
       geom_point() +
       facet_wrap(~transformation, nrow = 1) +
       theme_minimal() +
+      theme(legend.position = "bottom") +
       labs(title = "TWFE Transformation: Step-by-Step Fixed Effects Removal",
            x = "Year", y = "Adjusted Outcome")
     
-    ggplotly(p)
+    ggplotly(p) %>%
+      layout(legend = list(orientation = "h", y = -0.2))
   })
   
   # TWFE explanation output
@@ -113,7 +117,8 @@ function(input, output, session) {
     p <- create_event_study_plot(event_study_data())
     ggplotly(p, height = 400) |>  # Set consistent height
       layout(
-        margin = list(l = 50, r = 50, b = 50, t = 50),  # Adjust margins
+        margin = list(l = 50, r = 50, b = 80, t = 50),  # Adjust bottom margin for legend
+        legend = list(orientation = "h", y = -0.2),
         showlegend = TRUE
       )
   })
