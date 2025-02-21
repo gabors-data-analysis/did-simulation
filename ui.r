@@ -46,9 +46,10 @@ ui <- fluidPage(
              p("When you observe many units over time and want understand the effect of some policy change, you consider TWFE or FD panel models or do an event study design for first differences. This is a toy simulation to illustrate some points."),
              p("This is a panel estimation illustration. Imagine we have 6 countries, A to F, and 13 time periods 2010 to 2022. 
           Outcome (y) is average per capita sales of sugary drinks (ml/week), set at a 1000, b 2000, c 4000, d 5000, e 3000, f 6000. 
-          E and F are controls, no intervention. The intervention is sales tax that cuts consumption by -1000 as default. You can set many aspects of the intervention, 
-          even have 2. All interventions have immediate effect, no build up (yet).")
-           )
+          E and F are controls, no intervention. "),
+             p("The intervention is a 1 dollar sales tax. The true effect of the tax cuts consumption by -1000 as default. You can set many aspects of the intervention: size, timing, you can even have 2. You can add noise."),
+             p("Currently: all interventions have immediate effect. No reversal.")
+           
     )
   ),
   
