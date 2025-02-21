@@ -232,13 +232,7 @@ function(input, output, session) {
   # Event Study plot output - now runs automatically for single intervention scenarios
   output$event_study_plot <- renderPlotly({
     req(event_study_data())
-    p <- create_event_study_plot(event_study_data())
-    ggplotly(p, height = 400) |>  # Set consistent height
-      layout(
-        margin = list(l = 50, r = 50, b = 80, t = 50),  # Adjust bottom margin for legend
-        legend = list(orientation = "h", y = -0.2),
-        showlegend = TRUE
-      )
+    create_event_study_plot(event_study_data())
   })
   
   # Event Study explanation output
@@ -247,11 +241,10 @@ function(input, output, session) {
     paste(
       "1. Original Data: Shows the raw time series with vertical lines marking treatment timing.",
       "2. Recentered Around Event: Shows the same data with time recentered around the treatment (time 0).",
-      "3. Treatment vs Control: Shows the difference between treated and control group averages over event time.",
+      "3. Normalized Group Averages: Shows the difference between treated and control groups over event time, with each series normalized to 0 at time -1.",
       sep = "\n"
     )
   })
-  
   # Download handler
   output$downloadData <- downloadHandler(
     filename = function() {

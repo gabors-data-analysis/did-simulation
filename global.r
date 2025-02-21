@@ -350,6 +350,17 @@ transform_event_study_data <- function(data, min_time, max_time) {
                               year - cohort)
     )
   
+  # Normalize each country's time series by subtracting the value at t-1
+  normalized_data <- base_data %>%
+    group_by(country) %>%
+    mutate(
+      # Find the value at relative time = -1 for each country
+      t_minus_1_value = value[relative_time == -1],
+      # Normalize the series by subtracting that value
+      normalized_value = value - t_minus_1_value
+    ) %>%
+    ungroup()
+  
   # 1. Original data panel - keep all countries
   p1_data <- base_data %>%
     mutate(
@@ -366,16 +377,16 @@ transform_event_study_data <- function(data, min_time, max_time) {
       vline = 0
     )
   
-  # 3. Group averages only
-  p3_data <- base_data %>%
+  # 3. Group averages with normalized values
+  p3_data <- normalized_data %>%
     filter(relative_time >= min_time, relative_time <= max_time) %>%
     group_by(relative_time, treated_group) %>%
     summarize(
-      value = mean(value),
+      value = mean(normalized_value),
       .groups = 'drop'
     ) %>%
     mutate(
-      panel = "3. Group Averages",
+      panel = "3. Normalized Group Averages",
       country = if_else(treated_group, "Treated Average", "Control Average"),
       vline = 0
     )
@@ -389,17 +400,18 @@ transform_event_study_data <- function(data, min_time, max_time) {
     mutate(panel = factor(panel, levels = c(
       "1. Original Time Series",
       "2. Event Time",
-      "3. Group Averages"
+      "3. Normalized Group Averages"
     )))
   
   return(plot_data)
 }
 
 # Create event study plot
+# Create event study plot
 create_event_study_plot <- function(data) {
   # Create vertical line data
   vlines <- data %>%
-    filter(!is.infinite(vline)) %>%
+    filter(!is.na(vline) & !is.infinite(vline)) %>%
     distinct(panel, vline) %>%
     rename(xint = vline)
   
@@ -407,69 +419,86 @@ create_event_study_plot <- function(data) {
   year_breaks <- sort(unique(filter(data, panel == "1. Original Time Series")$year))
   relative_breaks <- sort(unique(filter(data, panel != "1. Original Time Series")$relative_time))
   
-  # Base plot
-  p <- ggplot() +
-    # Panel 1: Original time series with all countries
-    geom_line(data = filter(data, panel == "1. Original Time Series"),
-              aes(x = year, y = value, color = country, group = country)) +
-    geom_point(data = filter(data, panel == "1. Original Time Series"),
-               aes(x = year, y = value, color = country)) +
-    
-    # Panel 2: Event time data with all countries
-    geom_line(data = filter(data, panel == "2. Event Time"),
-              aes(x = relative_time, y = value, color = country, group = country)) +
-    geom_point(data = filter(data, panel == "2. Event Time"),
-               aes(x = relative_time, y = value, color = country)) +
-    
-    # Panel 3: Group averages
-    geom_line(data = filter(data, panel == "3. Group Averages"),
-              aes(x = relative_time, y = value, color = country, group = country),
-              size = 1.5) +
-    geom_point(data = filter(data, panel == "3. Group Averages"),
-               aes(x = relative_time, y = value, color = country),
-               size = 3) +
-    
-    # Add vertical lines
-    geom_vline(data = vlines,
+  # Create separate plots for each panel to control y-axis limits independently
+  p1 <- ggplot(filter(data, panel == "1. Original Time Series"), 
+               aes(x = year, y = value, color = country, group = country)) +
+    geom_line() +
+    geom_point() +
+    geom_vline(data = filter(vlines, panel == "1. Original Time Series"),
                aes(xintercept = xint),
                linetype = "dashed") +
-    
-    # Faceting and theme
-    facet_wrap(~panel, scales = "free_x", ncol = 3) +
     theme_minimal() +
     theme(
-      strip.text = element_text(size = 11, face = "bold"),
-      legend.position = "bottom",  # Legend at bottom
+      plot.title = element_text(size = 11, face = "bold"),
+      legend.position = "none",
       panel.grid.major = element_line(color = "grey90"),
       panel.grid.minor = element_blank(),
       axis.text = element_text(size = 9),
       axis.title = element_text(size = 10)
     ) +
-    scale_y_continuous(breaks = seq(-1000, max(data$value) + 1000, by = 1000), 
-                       expand = c(0, 0),
-                       limits = c(-1000, max(data$value) + 1000)) +
-    # Custom x-axis labels for each panel
-    scale_x_continuous(breaks = function(x) {
-      if(x[2] > 2000) {  # Panel 1 (years)
-        year_breaks
-      } else {  # Panels 2 & 3 (relative time)
-        relative_breaks
-      }
-    },
-    labels = function(x) {
-      if(x[1] > 2000) {  # Panel 1 (years)
-        paste0("'", substr(as.character(x), 3, 4))
-      } else {  # Panels 2 & 3 (relative time)
-        x
-      }
-    }) +
-    labs(x = "Time", y = "Value", color = "Group")
+    scale_x_continuous(breaks = year_breaks,
+                       labels = function(x) paste0("'", substr(as.character(x), 3, 4))) +
+    labs(title = "1. Original Time Series", x = "Year", y = "Value")
   
-  return(p)
+  p2 <- ggplot(filter(data, panel == "2. Event Time"), 
+               aes(x = relative_time, y = value, color = country, group = country)) +
+    geom_line() +
+    geom_point() +
+    geom_vline(data = filter(vlines, panel == "2. Event Time"),
+               aes(xintercept = xint),
+               linetype = "dashed") +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 11, face = "bold"),
+      legend.position = "none",
+      panel.grid.major = element_line(color = "grey90"),
+      panel.grid.minor = element_blank(),
+      axis.text = element_text(size = 9),
+      axis.title = element_text(size = 10)
+    ) +
+    scale_x_continuous(breaks = relative_breaks) +
+    labs(title = "2. Event Time", x = "Relative Time", y = "Value")
+  
+  p3 <- ggplot(filter(data, panel == "3. Normalized Group Averages"), 
+               aes(x = relative_time, y = value, color = country, group = country)) +
+    geom_line(size = 1.5) +
+    geom_point(size = 3) +
+    geom_hline(yintercept = 0, linetype = "dotted") +
+    geom_vline(data = filter(vlines, panel == "3. Normalized Group Averages"),
+               aes(xintercept = xint),
+               linetype = "dashed") +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 11, face = "bold"),
+      legend.position = "none",
+      panel.grid.major = element_line(color = "grey90"),
+      panel.grid.minor = element_blank(),
+      axis.text = element_text(size = 9),
+      axis.title = element_text(size = 10)
+    ) +
+    scale_x_continuous(breaks = relative_breaks) +
+    ylim(-4000, 4000) +  # Fixed y-axis limits for panel 3
+    labs(title = "3. Normalized Group Averages", x = "Relative Time", y = "Value")
+  
+  # Combine plots using subplot
+  fig <- subplot(
+    ggplotly(p1, tooltip = c("country", "year", "value")),
+    ggplotly(p2, tooltip = c("country", "relative_time", "value")),
+    ggplotly(p3, tooltip = c("country", "relative_time", "value")),
+    nrows = 1,
+    shareX = FALSE,
+    titleX = TRUE,
+    titleY = TRUE
+  )
+  
+  # Add a shared legend at the bottom
+  fig <- fig %>% layout(
+    showlegend = TRUE,
+    legend = list(orientation = "h", y = -0.2, x = 0.5, xanchor = "center")
+  )
+  
+  return(fig)
 }
-
-
-# Updated run_models function
 # Updated run_models function
 run_models <- function(data, input) {
   # First, ensure treatment variable correctly accounts for reversal
