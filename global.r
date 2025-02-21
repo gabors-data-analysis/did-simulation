@@ -46,6 +46,20 @@ generate_data <- function(input) {
     }
   }
   
+  # Parse dynamic effect values if provided
+  if (input$dynamic_effect && !is.null(input$dynamic_effect_values)) {
+    dynamic_values <- as.numeric(strsplit(input$dynamic_effect_values, ",")[[1]])
+    if (length(dynamic_values) != 3) {
+      dynamic_values <- c(50, 75, 100)  # Fallback to default if invalid
+    }
+  } else {
+    dynamic_values <- c(100, 100, 100)  # No dynamic effect (immediate full effect)
+  }
+  
+  # Default years to reversal
+  years_to_reversal <- ifelse(!is.null(input$years_to_reversal), 
+                              input$years_to_reversal, 3)
+  
   data <- expand.grid(year = years, country = countries) %>%
     arrange(country, year) %>%
     mutate(
@@ -100,9 +114,22 @@ generate_data <- function(input) {
         TRUE ~ 0
       ),
       
+      # Calculate reversal timing
+      reversal_year = if_else(input$reversal, cohort + years_to_reversal, Inf),
+      post_reversal = !is.infinite(reversal_year) & year >= reversal_year,
+      
+      # Apply effect considering dynamic effect and reversal
       effect = case_when(
         treatment == 0 ~ 0,
-        treatment == 1 ~ effects[match(country, LETTERS[1:4])],
+        treatment == 1 & post_reversal & input$reversal ~ 0,  # Reversal: effect goes to zero
+        treatment == 1 & input$dynamic_effect ~ effects[match(country, LETTERS[1:4])] * 
+          case_when(
+            relative_time == 0 ~ dynamic_values[1]/100,
+            relative_time == 1 ~ dynamic_values[2]/100,
+            relative_time >= 2 ~ dynamic_values[3]/100,
+            TRUE ~ 0
+          ),
+        treatment == 1 ~ effects[match(country, LETTERS[1:4])],  # Normal full effect
         treatment == 2 & input$num_shocks == "2_same" ~ 2 * effects[match(country, LETTERS[1:4])],
         treatment == 2 & input$num_shocks == "2_varied" ~ 
           effects[match(country, LETTERS[1:4])] * (1 + input$second_shock_percent/100),

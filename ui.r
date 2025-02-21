@@ -27,7 +27,7 @@ ui <- fluidPage(
              class = "well",
              style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
              p(
-               "v0.2 2025-02-12. In development. Suggestions: contact ",
+               "v0.3 2025-02-21. In development. Suggestions: contact ",
                tags$a(href = "mailto:bekesg@ceu.edu", "Gabor"),
                " / add an issue to ",
                tags$a(
@@ -57,6 +57,16 @@ ui <- fluidPage(
     column(6, plotlyOutput("did_plot"))
   ),
   
+  # Treatment explanation
+  fluidRow(
+    column(12,
+           div(
+             style = "background-color: #f0f9ff; padding: 10px; border-left: 4px solid #17a2b8; margin-top: 10px; margin-bottom: 20px;",
+             textOutput("treatment_explanation")
+           )
+    )
+  ),
+  
   # Settings section - all below the textbox and graphs
   fluidRow(
     column(12,
@@ -81,7 +91,20 @@ ui <- fluidPage(
                
                checkboxInput("early_smaller", "Early interventions are smaller", FALSE),
                checkboxInput("global_trend", "Include global trend", FALSE),
-               checkboxInput("individual_trend", "Include individual trends", FALSE))
+               checkboxInput("individual_trend", "Include individual trends", FALSE),
+               
+               # New options
+               checkboxInput("dynamic_effect", "Dynamic effect build-up", FALSE),
+               tags$span(
+                 style = "font-size: 0.8em; color: #6c757d; display: block; margin-top: -10px; margin-bottom: 10px;",
+                 "When enabled, treatment effect builds up gradually according to percentages."
+               ),
+               
+               checkboxInput("reversal", "Treatment reversal", FALSE),
+               tags$span(
+                 style = "font-size: 0.8em; color: #6c757d; display: block; margin-top: -10px; margin-bottom: 10px;",
+                 "When enabled, treatment effect disappears after specified years."
+               ))
     ),
     
     column(3,
@@ -139,7 +162,12 @@ ui <- fluidPage(
                            "-500,-1500,-500,-1500"),
                  numericInput("global_trend_size", "Global trend increment:", 100),
                  textInput("individual_trends", "Individual trends (comma-separated):", 
-                           "100,200,300,400,0,0")
+                           "100,200,300,400,0,0"),
+                 
+                 # New advanced settings
+                 textInput("dynamic_effect_values", "Dynamic effect progression (%):", 
+                           "50,75,100"),
+                 numericInput("years_to_reversal", "Years until reversal:", 3, min = 1, max = 10)
                ))
     )
   ),

@@ -32,6 +32,51 @@ function(input, output, session) {
     }
   })
   
+  # Validate dynamic effect values
+  observe({
+    if(input$dynamic_effect) {
+      # Validate dynamic effect values
+      dyn_values <- as.numeric(strsplit(input$dynamic_effect_values, ",")[[1]])
+      
+      if(length(dyn_values) != 3) {
+        showModal(modalDialog(
+          title = "Invalid Dynamic Effect Values",
+          "Please provide exactly 3 comma-separated percentages for dynamic effect progression.",
+          easyClose = TRUE
+        ))
+        updateTextInput(session, "dynamic_effect_values", value = "50,75,100")
+      } else if(any(is.na(dyn_values)) || any(dyn_values < 0) || any(dyn_values > 100)) {
+        showModal(modalDialog(
+          title = "Invalid Dynamic Effect Values",
+          "All percentages must be between 0 and 100.",
+          easyClose = TRUE
+        ))
+        updateTextInput(session, "dynamic_effect_values", value = "50,75,100")
+      } else if(dyn_values[1] > dyn_values[2] || dyn_values[2] > dyn_values[3]) {
+        showModal(modalDialog(
+          title = "Invalid Dynamic Effect Values",
+          "Percentages should be in ascending order.",
+          easyClose = TRUE
+        ))
+        updateTextInput(session, "dynamic_effect_values", value = "50,75,100")
+      }
+    }
+  })
+  
+  # Validate years to reversal
+  observe({
+    if(input$reversal) {
+      if(input$years_to_reversal < 1) {
+        showModal(modalDialog(
+          title = "Invalid Reversal Timing",
+          "Years until reversal must be at least 1.",
+          easyClose = TRUE
+        ))
+        updateNumericInput(session, "years_to_reversal", value = 3)
+      }
+    }
+  })
+  
   # Generate reactive dataset
   data <- reactive({
     generate_data(input)
@@ -68,6 +113,25 @@ function(input, output, session) {
     p <- create_panel_view(data())
     ggplotly(p) %>%
       layout(legend = list(orientation = "h", y = -0.2))
+  })
+  
+  # Treatment explanation output
+  output$treatment_explanation <- renderText({
+    if(input$dynamic_effect && input$reversal) {
+      paste("Treatment: Dynamic build-up over time, then reversal after", 
+            input$years_to_reversal, "years.")
+    } else if(input$dynamic_effect) {
+      dyn_values <- strsplit(input$dynamic_effect_values, ",")[[1]]
+      paste("Treatment: Dynamic build-up over time. Year 1:", 
+            dyn_values[1], "%, Year 2:", 
+            dyn_values[2], "%, Year 3+:", 
+            dyn_values[3], "%")
+    } else if(input$reversal) {
+      paste("Treatment: Full effect immediately, then reversal after", 
+            input$years_to_reversal, "years.")
+    } else {
+      "Treatment: Full effect immediately after implementation."
+    }
   })
   
   # Model results output
