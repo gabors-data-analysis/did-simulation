@@ -64,6 +64,12 @@ function(input, output, session) {
     ggplotly(p)
   })
   
+  # NEW: PanelView plot output
+  output$panel_view <- renderPlotly({
+    p <- create_panel_view(data())
+    ggplotly(p)
+  })
+  
   # Model results output
   output$model_results <- renderPrint({
     models <- run_models(data(), input)
