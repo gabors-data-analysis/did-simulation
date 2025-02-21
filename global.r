@@ -17,7 +17,7 @@ library(plotly)
 library(broom)
 library(gridExtra)
 
-
+# version: 2025-02-21
 
 #########################################
 # Data generation function
@@ -469,9 +469,24 @@ create_event_study_plot <- function(data) {
 }
 
 # Updated run_models function
+# Updated run_models function
 run_models <- function(data, input) {
+  # First, ensure treatment variable correctly accounts for reversal
+  model_data <- data
+  
+  if(input$reversal) {
+    # Reset treatment to 0 after reversal
+    model_data <- model_data %>%
+      mutate(
+        treatment = case_when(
+          post_reversal ~ 0,  # Set treatment to 0 after reversal
+          TRUE ~ treatment    # Keep original value otherwise
+        )
+      )
+  }
+  
   # First difference data preparation
-  fd_data <- data %>% 
+  fd_data <- model_data %>% 
     group_by(country) %>%
     mutate(
       value_diff = value - lag(value),
@@ -480,7 +495,7 @@ run_models <- function(data, input) {
     filter(!is.na(value_diff))
   
   # Event study data preparation with dynamic min/max time
-  data_event <- data %>%
+  data_event <- model_data %>%
     group_by(country) %>%
     mutate(
       value_diff = value - lag(value),
@@ -504,7 +519,7 @@ run_models <- function(data, input) {
   # Model specifications
   if(input$year_fe) {
     twfe_model <- feols(value ~ treatment | country + year, 
-                        data = data,
+                        data = model_data,
                         cluster = "country")
     
     if(input$country_fe_fd) {
@@ -518,7 +533,7 @@ run_models <- function(data, input) {
     }
   } else {
     twfe_model <- feols(value ~ treatment | country, 
-                        data = data,
+                        data = model_data,
                         cluster = "country")
     
     if(input$country_fe_fd) {
@@ -554,10 +569,11 @@ run_models <- function(data, input) {
 create_panel_view <- function(data) {
   # Create a simplified dataset for the heatmap
   panel_data <- data %>%
-    select(year, country, treatment) %>%
+    select(year, country, treatment, post_reversal) %>%
     mutate(
       treatment_status = case_when(
         treatment == 0 ~ "No treatment",
+        treatment == 1 & post_reversal ~ "No treatment", # After reversal, show as no treatment
         treatment == 1 ~ "Treated once",
         treatment == 2 ~ "Treated twice",
         TRUE ~ NA_character_
