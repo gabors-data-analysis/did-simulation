@@ -37,25 +37,23 @@ function(input, output, session) {
     generate_data(input)
   })
   
-  # TWFE transformation reactive
+  # TWFE transformation reactive - now automatically runs without a button
   twfe_data <- reactive({
-    req(input$run_twfe)
-    isolate({
-      run_twfe_transform(data())
-    })
+    run_twfe_transform(data())
   })
   
-  # Event study transformation reactive
+  # Event study transformation reactive - now automatically runs without a button
   event_study_data <- reactive({
-    req(input$run_event_study)
-    req(input$num_shocks == "1")  # Only run for single intervention
-    isolate({
+    # Only run for single intervention
+    if(input$num_shocks == "1") {
       transform_event_study_data(
         data(), 
         input$min_event_time, 
         input$max_event_time
       )
-    })
+    } else {
+      return(NULL)
+    }
   })
   
   # Main plot output
@@ -83,7 +81,7 @@ function(input, output, session) {
            signif.code = NA)
   })
   
-  # TWFE plot output
+  # TWFE plot output - now runs automatically
   output$twfe_plot <- renderPlotly({
     req(twfe_data())
     
@@ -102,7 +100,6 @@ function(input, output, session) {
   
   # TWFE explanation output
   output$twfe_explanation <- renderText({
-    req(input$run_twfe)
     paste(
       "1. Raw Data: Observed sales by country over time.",
       "2. Country FE Removed: Adjusted for country-level differences, showing within-country variation.",
@@ -111,7 +108,7 @@ function(input, output, session) {
     )
   })
   
-  # Event Study plot output
+  # Event Study plot output - now runs automatically for single intervention scenarios
   output$event_study_plot <- renderPlotly({
     req(event_study_data())
     p <- create_event_study_plot(event_study_data())
@@ -125,7 +122,7 @@ function(input, output, session) {
   
   # Event Study explanation output
   output$event_study_explanation <- renderText({
-    req(input$run_event_study)
+    req(input$num_shocks == "1")  # Only show for single intervention
     paste(
       "1. Original Data: Shows the raw time series with vertical lines marking treatment timing.",
       "2. Recentered Around Event: Shows the same data with time recentered around the treatment (time 0).",
