@@ -1,4 +1,3 @@
-
 # Install and load required packages
 
 options(repos = c(CRAN = "https://cloud.r-project.org"))
@@ -198,7 +197,10 @@ create_did_plot <- function(data) {
     geom_line() +
     geom_point() +
     theme_minimal() +
-    theme(panel.grid.major = element_line(color = "grey85")) +
+    theme(
+      panel.grid.major = element_line(color = "grey85"),
+      legend.position = "bottom"  # Move legend to bottom
+    ) +
     scale_x_continuous(breaks = 2010:2022) +
     scale_y_continuous(breaks = seq(-1000, max(data$value) + 1000, by = 1000), 
                        expand = c(0, 0),
@@ -396,7 +398,7 @@ create_event_study_plot <- function(data) {
     theme_minimal() +
     theme(
       strip.text = element_text(size = 11, face = "bold"),
-      legend.position = "bottom",
+      legend.position = "bottom",  # Legend at bottom
       panel.grid.major = element_line(color = "grey90"),
       panel.grid.minor = element_blank(),
       axis.text = element_text(size = 9),
@@ -457,7 +459,7 @@ run_models <- function(data, input) {
     filter(!is.infinite(cohort) | is.infinite(relative_time)) %>%
     filter(!is.na(value_diff))
   
-
+  
   # Model specifications
   if(input$year_fe) {
     twfe_model <- feols(value ~ treatment | country + year, 
@@ -539,4 +541,3 @@ create_panel_view <- function(data) {
   
   return(p)
 }
-
