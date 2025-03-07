@@ -336,6 +336,7 @@ run_models <- function(data, input) {
 
 
 # Transform data for event study visualization
+# Transform data for event study visualization
 transform_event_study_data <- function(data, min_time, max_time) {
   # Get treatment timing for controls (use first treated unit's timing)
   first_treatment <- min(data$cohort[!is.infinite(data$cohort)])
@@ -406,7 +407,6 @@ transform_event_study_data <- function(data, min_time, max_time) {
   return(plot_data)
 }
 
-# Create event study plot
 # Create event study plot
 create_event_study_plot <- function(data) {
   # Create vertical line data
@@ -499,6 +499,7 @@ create_event_study_plot <- function(data) {
   
   return(fig)
 }
+ 
 # Updated run_models function
 run_models <- function(data, input) {
   # First, ensure treatment variable correctly accounts for reversal
@@ -520,7 +521,15 @@ run_models <- function(data, input) {
     group_by(country) %>%
     mutate(
       value_diff = value - lag(value),
-      treatment_diff = treatment - lag(treatment)
+      treatment_diff = treatment - lag(treatment),
+      # Create lagged differences for treatment
+      treatment_diff_lag1 = lag(treatment_diff, 1),
+      treatment_diff_lag2 = lag(treatment_diff, 2),
+      treatment_diff_lag3 = lag(treatment_diff, 3),
+      # Create double-differenced treatment for cumulative model
+      d2_treatment = treatment_diff - lag(treatment_diff),
+      d2_treatment_lag1 = lag(d2_treatment, 1),
+      d2_treatment_lag2 = lag(d2_treatment, 2)
     ) %>% 
     filter(!is.na(value_diff))
   
@@ -555,10 +564,24 @@ run_models <- function(data, input) {
       fd_model <- feols(value_diff ~ treatment_diff | country + year, 
                         data = fd_data,
                         cluster = "country")
+      
+      # FD model with cumulative effect (using the reparameterization trick)
+      fd_cumul_model <- feols(value_diff ~ treatment_diff_lag3 + 
+                                d2_treatment + d2_treatment_lag1 + d2_treatment_lag2 | 
+                                country + year, 
+                              data = fd_data,
+                              cluster = "country")
     } else {
       fd_model <- feols(value_diff ~ treatment_diff | year, 
                         data = fd_data,
                         cluster = "country")
+      
+      # FD model with cumulative effect
+      fd_cumul_model <- feols(value_diff ~ treatment_diff_lag3 + 
+                                d2_treatment + d2_treatment_lag1 + d2_treatment_lag2 | 
+                                year, 
+                              data = fd_data,
+                              cluster = "country")
     }
   } else {
     twfe_model <- feols(value ~ treatment | country, 
@@ -569,17 +592,28 @@ run_models <- function(data, input) {
       fd_model <- feols(value_diff ~ treatment_diff | country, 
                         data = fd_data,
                         cluster = "country")
+      
+      # FD model with cumulative effect
+      fd_cumul_model <- feols(value_diff ~ treatment_diff_lag3 + 
+                                d2_treatment + d2_treatment_lag1 + d2_treatment_lag2 | 
+                                country, 
+                              data = fd_data,
+                              cluster = "country")
     } else {
       fd_model <- feols(value_diff ~ treatment_diff, 
                         data = fd_data,
                         cluster = "country")
+      
+      # FD model with cumulative effect
+      fd_cumul_model <- feols(value_diff ~ treatment_diff_lag3 + 
+                                d2_treatment + d2_treatment_lag1 + d2_treatment_lag2, 
+                              data = fd_data,
+                              cluster = "country")
     }
   }
   
-  # Event study model - now using properly formatted relative time indicators
+  # Event study model
   if(input$num_shocks == "1") {
-    # Using relative time directly with i() function which is more reliable
-    # We'll use -1 as the reference period as before
     event_model <- feols(value_diff ~ i(relative_time, ref = -1), 
                          cluster = "country",
                          data = filter(data_event, relative_time >= -3 & relative_time <= 3))
@@ -592,10 +626,10 @@ run_models <- function(data, input) {
   return(list(
     twfe = twfe_model,
     fd = fd_model,
+    fd_cumul = fd_cumul_model,
     event = event_model
   ))
 }
-
 # Create PanelView heatmap function
 create_panel_view <- function(data) {
   # Create a simplified dataset for the heatmap

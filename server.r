@@ -138,17 +138,41 @@ function(input, output, session) {
   output$model_results <- renderPrint({
     models <- run_models(data(), input)
     
+    # Create dictionary for coefficient renaming
+    dictName <- c(
+      "treatment_diff" = "Contemporaneous Effect",
+      "treatment_diff_lag3" = "Effect after 3 years (cumulative)",
+      "d2_treatment" = "Contemporaneous",
+      "d2_treatment_lag1" = "After 1 year",
+      "d2_treatment_lag2" = "After 2 years",
+      "(Intercept)" = "Constant"
+    )
+    
     if(input$num_shocks == "1") {
-      etable(models$twfe, models$fd, models$event,
-             headers = c("FE", "First Difference", "Event Study FD"),
-             drop = c("Constant", "Intercept"), # Keep lag coefficients
+      etable(models$twfe, models$fd, models$fd_cumul, models$event,
+             headers = c("Fixed Effects", "First Difference", "FD with Lags (Cumulative)", "Event Study FD"),
+             dict = dictName,
+             drop = "Intercept", # Drop intercept to save space
              signif.code = NA)
     } else {
-      etable(models$twfe, models$fd,
-             headers = c("FE", "First Difference"),
-             drop = c("Constant", "Intercept"),
+      etable(models$twfe, models$fd, models$fd_cumul,
+             headers = c("Fixed Effects", "First Difference", "FD with Lags (Cumulative)"),
+             dict = dictName,
+             drop = "Intercept",
              signif.code = NA)
     }
+  })  
+  
+  # Model explanation output
+  output$model_explanation <- renderText({
+    paste(
+      "First Difference: Basic model with contemporaneous effect only.",
+      "FD with Lags (Cumulative): Shows the total accumulated effect after 3 years. This uses a reparameterization trick:",
+      "   - The coefficient on 'Effect after 3 years' represents the total cumulative effect of the intervention after 3 years.",
+      "   - This is achieved by reformulating the model using a 3-year lag and double-differenced terms.",
+      "Event Study: Shows the dynamic effects of the treatment relative to the period before treatment (t-1).",
+      sep = "\n"
+    )
   })
   
   # TWFE plot output - now runs automatically

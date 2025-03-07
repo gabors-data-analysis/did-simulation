@@ -180,15 +180,21 @@ ui <- fluidPage(
   ),
   
   # Regression results
+  
+  # Regression results
   fluidRow(
     column(12,
            tags$hr(),
            div(
              style = "background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0275d8; margin-bottom: 20px;",
              p(style = "margin: 0;", "We have three models: FE, FD, and event study. FE do not have time dummies as default. The event study recenters the intervention when it's a single one. 
-               For multiple ones, does not display. Models estimated in R with feols.")
+             For multiple ones, does not display. Models estimated in R with feols.")
            ),
            verbatimTextOutput("model_results"),
+           div(
+             style = "background-color: #f0f9ff; padding: 15px; border-left: 4px solid #17a2b8; margin-bottom: 20px;",
+             textOutput("model_explanation")
+           ),
            downloadButton("downloadData", "Download Data")
     )
   ),
@@ -205,6 +211,8 @@ ui <- fluidPage(
   ),
   
   # Event Study Transformation Section - no button needed
+  
+  
   fluidRow(
     column(12,
            tags$hr(),
