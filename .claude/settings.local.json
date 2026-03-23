@@ -10,7 +10,8 @@
       "WebFetch(domain:cran.r-project.org)",
       "WebFetch(domain:lrberge.github.io)",
       "Bash(/tmp/check_inf.R:*)",
-      "Bash(Rscript /tmp/check_inf.R)"
+      "Bash(Rscript /tmp/check_inf.R)",
+      "Bash(Rscript -e \"cat\\(R.version.string\\)\")"
     ]
   }
 }

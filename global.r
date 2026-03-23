@@ -104,7 +104,7 @@ generate_data <- function(input) {
         TRUE ~ Inf
       ),
       # Numeric cohort for did::att_gt() -- 0 means never-treated
-      cohort_numeric = ifelse(is.infinite(cohort), 0L, as.integer(cohort)),
+      cohort_numeric = ifelse(is.infinite(cohort), 0, as.numeric(cohort)),
       second_cohort = case_when(
         input$num_shocks == "1" ~ Inf,
         country == "A" ~ second_treat_timing[1],
@@ -246,7 +246,7 @@ run_twfe_transform <- function(data) {
 create_did_plot <- function(data) {
   p <- ggplot(data, aes(x = year, y = value, color = country, group = country)) +
     geom_hline(yintercept = seq(0, max(data$value) + 1000, by = 500),
-               color = "grey90", size = 0.2) +
+               color = "grey90", linewidth = 0.2) +
     geom_line() +
     geom_point() +
     theme_minimal() +
@@ -597,7 +597,7 @@ create_event_study_panel <- function(data, panel_name) {
     p_ylim <- compute_ylim(p_data$value)
     p <- ggplot(p_data,
                 aes(x = relative_time, y = value, color = country, group = country)) +
-      geom_line(size = 1.5) + geom_point(size = 3) +
+      geom_line(linewidth = 1.5) + geom_point(size = 3) +
       geom_hline(yintercept = 0, linetype = "dotted") +
       geom_vline(data = filter(vlines, panel == "3. Normalized Group Averages"),
                  aes(xintercept = xint), linetype = "dashed") +
@@ -615,7 +615,7 @@ create_event_study_panel <- function(data, panel_name) {
     p_ylim <- compute_ylim(p_data$value)
     p <- ggplot(p_data,
                 aes(x = relative_time, y = value, color = country, group = country)) +
-      geom_line(size = 1.2) + geom_point(size = 2.5) +
+      geom_line(linewidth = 1.2) + geom_point(size = 2.5) +
       geom_hline(yintercept = 0, linetype = "dotted") +
       geom_vline(aes(xintercept = 0), linetype = "dashed") +
       base_theme +
@@ -640,7 +640,7 @@ create_event_coef_plot <- function(models, input) {
     event_ct <- tryCatch({
       ct <- coeftable(models$event)
       rnames <- rownames(ct)
-      event_times <- as.numeric(gsub(".*::(-?[0-9]+)$", "\\1", rnames))
+      event_times <- suppressWarnings(as.numeric(gsub(".*::(-?[0-9]+)$", "\\1", rnames)))
       data.frame(
         event_time = event_times,
         estimate = ct[, "Estimate"],
@@ -743,7 +743,7 @@ create_event_level_plot <- function(models, input) {
     twfe_ct <- tryCatch({
       ct <- coeftable(models$event)
       rnames <- rownames(ct)
-      event_times <- as.numeric(gsub(".*::(-?[0-9]+)$", "\\1", rnames))
+      event_times <- suppressWarnings(as.numeric(gsub(".*::(-?[0-9]+)$", "\\1", rnames)))
       fd_df <- data.frame(event_time = event_times,
                           estimate = ct[, "Estimate"],
                           se = ct[, "Std. Error"],
@@ -769,7 +769,7 @@ create_event_level_plot <- function(models, input) {
       )
       ct <- coeftable(sa_agg)
       rnames <- rownames(ct)
-      event_times <- as.numeric(gsub(".*::(-?[0-9]+)$", "\\1", rnames))
+      event_times <- suppressWarnings(as.numeric(gsub(".*::(-?[0-9]+)$", "\\1", rnames)))
       # Drop any NA event times (failed parsing)
       valid <- !is.na(event_times)
       data.frame(
@@ -863,7 +863,7 @@ create_panel_view <- function(data) {
     )
 
   p <- ggplot(panel_data, aes(x = year, y = country, fill = treatment_status)) +
-    geom_tile(color = "white", size = 0.5) +
+    geom_tile(color = "white", linewidth = 0.5) +
     scale_fill_manual(values = c("No treatment" = "#f0f8ff",
                                  "Treated once" = "#6495ed",
                                  "Treated twice" = "#000080")) +
