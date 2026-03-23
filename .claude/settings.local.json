@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(R --version)",
+      "Bash(Rscript -e 'library\\(fixest\\); packageVersion\\(\"\"\"\"fixest\"\"\"\"\\); args\\(etable\\)')",
+      "Bash(Rscript -e 'renv::restore\\(\\)')",
+      "Bash(Rscript --vanilla -e '.libPaths\\(.libPaths\\(\\)[length\\(.libPaths\\(\\)\\)]\\); cat\\(\"\"\"\"R version:\"\"\"\", R.version.string, \"\"\"\"\\\\n\"\"\"\"\\); cat\\(\"\"\"\"Packages:\"\"\"\", paste\\(rownames\\(installed.packages\\(\\)\\), collapse=\"\"\"\", \"\"\"\"\\), \"\"\"\"\\\\n\"\"\"\"\\)')",
+      "WebSearch",
+      "WebFetch(domain:search.r-project.org)",
+      "WebFetch(domain:cran.r-project.org)",
+      "WebFetch(domain:lrberge.github.io)"
+    ]
+  }
+}

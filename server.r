@@ -1,6 +1,6 @@
 # Server logic
 function(input, output, session) {
-  
+
   # Warning for year fixed effects
   observe({
     if (input$year_fe & input$timing == "once" & !input$global_trend & !input$individual_trend) {
@@ -11,7 +11,7 @@ function(input, output, session) {
       ))
     }
   })
-  
+
   # Validate event time window
   observe({
     if (input$min_event_time >= -1) {
@@ -31,13 +31,12 @@ function(input, output, session) {
       ))
     }
   })
-  
+
   # Validate dynamic effect values
   observe({
     if(input$dynamic_effect) {
-      # Validate dynamic effect values
       dyn_values <- as.numeric(strsplit(input$dynamic_effect_values, ",")[[1]])
-      
+
       if(length(dyn_values) != 3) {
         showModal(modalDialog(
           title = "Invalid Dynamic Effect Values",
@@ -62,7 +61,7 @@ function(input, output, session) {
       }
     }
   })
-  
+
   # Validate years to reversal
   observe({
     if(input$reversal) {
@@ -76,173 +75,256 @@ function(input, output, session) {
       }
     }
   })
-  
+
   # Generate reactive dataset
   data <- reactive({
     generate_data(input)
   })
-  
-  # TWFE transformation reactive - now automatically runs without a button
+
+  # Reactive models — computed once, used by table + coef plot
+  models <- reactive({
+    run_models(data(), input)
+  })
+
+  # TWFE transformation reactive
   twfe_data <- reactive({
     run_twfe_transform(data())
   })
-  
-  # Event study transformation reactive - now automatically runs without a button
+
+  # Event study transformation reactive
   event_study_data <- reactive({
-    # Only run for single intervention
     if(input$num_shocks == "1") {
       transform_event_study_data(
-        data(), 
-        input$min_event_time, 
-        input$max_event_time
+        data(),
+        input$min_event_time,
+        input$max_event_time,
+        input$timing
       )
     } else {
       return(NULL)
     }
   })
-  
+
   # Main plot output
   output$did_plot <- renderPlotly({
     p <- create_did_plot(data())
     ggplotly(p) %>%
       layout(legend = list(orientation = "h", y = -0.2))
   })
-  
-  # NEW: PanelView plot output
+
+  # PanelView plot output
   output$panel_view <- renderPlotly({
     p <- create_panel_view(data())
     ggplotly(p) %>%
       layout(legend = list(orientation = "h", y = -0.2))
   })
-  
+
   # Treatment explanation output
   output$treatment_explanation <- renderText({
     if(input$dynamic_effect && input$reversal) {
-      paste("Treatment: Dynamic build-up over time, then reversal after", 
+      paste("Treatment: Dynamic build-up over time, then reversal after",
             input$years_to_reversal, "years.")
     } else if(input$dynamic_effect) {
       dyn_values <- strsplit(input$dynamic_effect_values, ",")[[1]]
-      paste("Treatment: Dynamic build-up over time. Year 1:", 
-            dyn_values[1], "%, Year 2:", 
-            dyn_values[2], "%, Year 3+:", 
+      paste("Treatment: Dynamic build-up over time. Year 1:",
+            dyn_values[1], "%, Year 2:",
+            dyn_values[2], "%, Year 3+:",
             dyn_values[3], "%")
     } else if(input$reversal) {
-      paste("Treatment: Full effect immediately, then reversal after", 
+      paste("Treatment: Full effect immediately, then reversal after",
             input$years_to_reversal, "years.")
     } else {
       "Treatment: Full effect immediately after implementation."
     }
   })
-  
-  # Model results output
-  output$model_results <- renderPrint({
-    models <- run_models(data(), input)
-    
-    # Create dictionary for coefficient renaming
+
+  # ---- Pane 1: Panel models regression table (TWFE / FD) ----
+  output$model_results_panel <- renderUI({
+    m <- models()
+
     dictName <- c(
-      "treatment_diff" = "Contemporaneous Effect",
-      "treatment_diff_lag3" = "Effect after 3 years (cumulative)",
-      "d2_treatment" = "Contemporaneous",
-      "d2_treatment_lag1" = "After 1 year",
-      "d2_treatment_lag2" = "After 2 years",
+      "treatment" = "Average Effect",
+      "treatment_diff" = "Contemporaneous Effect (FD)",
+      "treatment_diff_lag3" = "Cumulative Effect (FD)",
       "(Intercept)" = "Constant"
     )
-    
-    if(input$num_shocks == "1") {
-      etable(models$twfe, models$fd, models$fd_cumul, models$event,
-             headers = c("Fixed Effects", "First Difference", "FD with Lags (Cumulative)", "Event Study FD"),
-             dict = dictName,
-             drop = "Intercept", # Drop intercept to save space
-             signif.code = NA)
-    } else {
-      etable(models$twfe, models$fd, models$fd_cumul,
-             headers = c("Fixed Effects", "First Difference", "FD with Lags (Cumulative)"),
-             dict = dictName,
-             drop = "Intercept",
-             signif.code = NA)
-    }
-  })  
-  
-  # Model explanation output
-  output$model_explanation <- renderText({
-    paste(
-      "First Difference: Basic model with contemporaneous effect only.",
-      "FD with Lags (Cumulative): Shows the total accumulated effect after 3 years. This uses a reparameterization trick:",
-      "   - The coefficient on 'Effect after 3 years' represents the total cumulative effect of the intervention after 3 years.",
-      "   - This is achieved by reformulating the model using a 3-year lag and double-differenced terms.",
-      "Event Study: Shows the dynamic effects of the treatment relative to the period before treatment (t-1).",
-      sep = "\n"
+
+    # Drop the d2_treatment reparameterization nuisance coefficients
+    # (they are running cumulative effects at each horizon, not incremental — confusing to display)
+    # Use % prefix to match original variable names regardless of dict renaming
+    drop_vars <- c("Intercept", "%d2_treatment", "%d2_treatment_lag1", "%d2_treatment_lag2")
+
+    # Coefficient names to bold in the table
+    bold_coefs <- c("Average Effect", "Contemporaneous Effect (FD)", "Cumulative Effect (FD)")
+
+    html_table <- tryCatch({
+      tbl_df <- etable(m$pols, m$twfe, m$fd, m$fd_cumul,
+                       dict = dictName, drop = drop_vars, signif.code = NA, tex = FALSE)
+      # Rename model columns (columns 2+ are models) by position
+      new_names <- c("(1) POLS", "(2) FE", "(3) FD", "(4) Dyn FD")
+      ncols <- ncol(tbl_df)
+      if (ncols >= 5) {
+        names(tbl_df)[2:5] <- new_names
+      }
+      # Bold the key coefficient rows (name column + value row)
+      name_col <- names(tbl_df)[1]
+      model_col_names <- names(tbl_df)[2:min(5, ncols)]
+      for (bc in bold_coefs) {
+        match_rows <- which(tbl_df[[name_col]] == bc)
+        if (length(match_rows) > 0) {
+          tbl_df[[name_col]][match_rows] <- paste0("<b>", bc, "</b>")
+          for (mc in model_col_names) {
+            tbl_df[[mc]][match_rows] <- paste0("<b>", tbl_df[[mc]][match_rows], "</b>")
+          }
+        }
+      }
+      knitr::kable(tbl_df, format = "html", table.attr = 'class="etable"', escape = FALSE)
+    }, error = function(e) {
+      paste0("<p style='color:#856404;'><em>Could not generate table: ", htmltools::htmlEscape(e$message), "</em></p>")
+    })
+
+    HTML(html_table)
+  })
+
+  output$model_explanation_panel <- renderText({
+    paste0(
+      "(1) POLS: Pooled OLS, no country FE. ",
+      "(2) FE: Levels with country FE (TWFE). ",
+      "(3) FD: First-differenced, contemporaneous effect only. ",
+      "(4) Dyn FD: Cumulative effect after 3 years via reparameterization trick ",
+      "(coefficient has proper SE for the sum of lags 0-3)."
     )
   })
-  
-  # TWFE plot output - now runs automatically
+
+  # ---- Pane 2: Event study regression table ----
+  output$model_results_event <- renderUI({
+    req(input$num_shocks == "1")
+    m <- models()
+
+    dictName <- c(
+      "treatment" = "Treatment",
+      "treatment_diff" = "Contemporaneous Effect",
+      "(Intercept)" = "Constant"
+    )
+
+    # Event study + SA in one etable (both are fixest objects)
+    html_table <- ""
+    has_event <- !is.null(m$event)
+    has_sunab <- !is.null(m$sunab)
+
+    html_table <- tryCatch({
+      event_names <- c()
+      tbl_df <- if (has_event && has_sunab) {
+        event_names <- c("Event Study FD", "Sun & Abraham")
+        etable(m$event, m$sunab,
+               dict = dictName, drop = "Intercept", signif.code = NA, tex = FALSE)
+      } else if (has_event) {
+        event_names <- c("Event Study FD")
+        etable(m$event,
+               dict = dictName, drop = "Intercept", signif.code = NA, tex = FALSE)
+      } else if (has_sunab) {
+        event_names <- c("Sun & Abraham")
+        etable(m$sunab,
+               dict = dictName, drop = "Intercept", signif.code = NA, tex = FALSE)
+      } else {
+        NULL
+      }
+      if (!is.null(tbl_df)) {
+        # Rename model columns by position (columns 2+)
+        n_models <- length(event_names)
+        if (ncol(tbl_df) >= n_models + 1) {
+          names(tbl_df)[2:(n_models + 1)] <- event_names
+        }
+        knitr::kable(tbl_df, format = "html", table.attr = 'class="etable"', escape = FALSE)
+      } else ""
+    }, error = function(e) {
+      paste0("<p style='color:#856404;'><em>Could not generate event study table: ", htmltools::htmlEscape(e$message), "</em></p>")
+    })
+
+    HTML(html_table)
+  })
+
+  # Estimator warnings
+  output$estimator_warnings <- renderText({
+    m <- models()
+    warnings <- c()
+    if (is.null(m$sunab) && input$show_sunab && input$num_shocks == "1") {
+      warnings <- c(warnings, "Sun & Abraham: Could not estimate (may need staggered treatment or year FE).")
+    }
+    paste(warnings, collapse = " | ")
+  })
+
+  # TWFE plot output
   output$twfe_plot <- renderPlotly({
     req(twfe_data())
-    
-    # Create list to store plots
-    plots <- list()
-    
-    # Get data for each transformation
+
     data_raw <- twfe_data() %>% filter(transformation == "1. Raw Data")
     data_unit <- twfe_data() %>% filter(transformation == "2. Unit FE Removed")
     data_both <- twfe_data() %>% filter(transformation == "3. Unit & Time FE Removed")
-    
+
     # Plot 1: Raw data (original y limits)
+    all_years <- sort(unique(data_raw$year))
+
     p1 <- ggplot(data_raw, aes(x = year, y = value, color = country)) +
       geom_line() +
       geom_point() +
       theme_minimal() +
       theme(legend.position = "none") +
+      scale_x_continuous(breaks = all_years) +
       ggtitle("1. Raw Data") +
       labs(x = "Year", y = "Value")
-    
-    # Plot 2: Unit FE removed (fixed y limits: -4000 to 4000)
+
+    # Plot 2: Unit FE removed — dynamic y-axis
+    p2_ylim <- compute_ylim(data_unit$value)
     p2 <- ggplot(data_unit, aes(x = year, y = value, color = country)) +
       geom_line() +
       geom_point() +
       theme_minimal() +
       theme(legend.position = "none") +
-      ylim(-4000, 4000) +
+      scale_x_continuous(breaks = all_years) +
+      coord_cartesian(ylim = p2_ylim) +
       ggtitle("2. Unit FE Removed") +
       labs(x = "Year", y = "Value")
-    
-    # Plot 3: Both FE removed (fixed y limits: -4000 to 4000)
+
+    # Plot 3: Both FE removed — dynamic y-axis
+    p3_ylim <- compute_ylim(data_both$value)
     p3 <- ggplot(data_both, aes(x = year, y = value, color = country)) +
       geom_line() +
       geom_point() +
       theme_minimal() +
       theme(legend.position = "none") +
-      ylim(-4000, 4000) +
+      scale_x_continuous(breaks = all_years) +
+      coord_cartesian(ylim = p3_ylim) +
       ggtitle("3. Unit & Time FE Removed") +
       labs(x = "Year", y = "Value")
-    
+
     # Combine plots with shared legend
     fig <- subplot(
       ggplotly(p1, tooltip = c("country", "year", "value")),
       ggplotly(p2, tooltip = c("country", "year", "value")),
       ggplotly(p3, tooltip = c("country", "year", "value")),
-      nrows = 1, 
+      nrows = 1,
       shareX = TRUE,
       titleX = TRUE,
       titleY = TRUE
     )
-    
-    # Keep only one legend by making the second and third plots invisible in the legend
-    for (i in seq_len(length(fig$data))) {
-      if (i > 6) {  # First 6 traces are from the first plot (6 countries)
-        fig$data[[i]]$showlegend <- FALSE
-      }
+
+    # Robust legend handling via legendgroup
+    n_countries <- length(unique(twfe_data()$country))
+    for (i in seq_len(length(fig$x$data))) {
+      country_idx <- ((i - 1) %% n_countries) + 1
+      fig$x$data[[i]]$legendgroup <- paste0("country_", country_idx)
+      fig$x$data[[i]]$showlegend <- (i <= n_countries)
     }
-    
-    # Set the overall layout
+
     fig <- fig %>% layout(
       title = "TWFE Transformation: Step-by-Step Fixed Effects Removal",
       legend = list(orientation = "h", y = -0.2, x = 0.5, xanchor = "center")
     )
-    
+
     return(fig)
   })
-  
+
   # TWFE explanation output
   output$twfe_explanation <- renderText({
     paste(
@@ -252,23 +334,51 @@ function(input, output, session) {
       sep = "\n"
     )
   })
-  
-  # Event Study plot output - now runs automatically for single intervention scenarios
-  output$event_study_plot <- renderPlotly({
+
+  # Event Study individual panel outputs
+  output$event_plot_a <- renderPlotly({
     req(event_study_data())
-    create_event_study_plot(event_study_data())
+    create_event_study_panel(event_study_data(), "A")
   })
-  
-  # Event Study explanation output
-  output$event_study_explanation <- renderText({
-    req(input$num_shocks == "1")  # Only show for single intervention
-    paste(
-      "1. Original Data: Shows the raw time series with vertical lines marking treatment timing.",
-      "2. Recentered Around Event: Shows the same data with time recentered around the treatment (time 0).",
-      "3. Normalized Group Averages: Shows the difference between treated and control groups over event time, with each series normalized to 0 at time -1.",
-      sep = "\n"
-    )
+
+  output$event_plot_b <- renderPlotly({
+    req(event_study_data())
+    create_event_study_panel(event_study_data(), "B")
   })
+
+  output$event_plot_c <- renderPlotly({
+    req(event_study_data())
+    create_event_study_panel(event_study_data(), "C")
+  })
+
+  output$event_plot_d <- renderPlotly({
+    req(event_study_data())
+    fig <- create_event_study_panel(event_study_data(), "D")
+    req(fig)
+    fig
+  })
+
+  # Treatment effect (levels) coefficient plot
+  output$event_level_plot <- renderPlotly({
+    req(input$num_shocks == "1")
+    m <- models()
+    p <- create_event_level_plot(m, input)
+    req(p)
+    ggplotly(p, tooltip = c("estimator", "event_time", "estimate")) %>%
+      layout(legend = list(orientation = "h", y = -0.15, x = 0.5, xanchor = "center"))
+  })
+
+  # Dynamic effect (FD) coefficient plot
+  output$event_coef_plot <- renderPlotly({
+    req(input$num_shocks == "1")
+    m <- models()
+    p <- create_event_coef_plot(m, input)
+    req(p)
+    ggplotly(p, tooltip = c("estimator", "event_time", "estimate")) %>%
+      layout(legend = list(orientation = "h", y = -0.15, x = 0.5, xanchor = "center"))
+  })
+
+
   # Download handler
   output$downloadData <- downloadHandler(
     filename = function() {
