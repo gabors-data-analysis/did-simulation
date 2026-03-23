@@ -8,7 +8,9 @@
       "WebSearch",
       "WebFetch(domain:search.r-project.org)",
       "WebFetch(domain:cran.r-project.org)",
-      "WebFetch(domain:lrberge.github.io)"
+      "WebFetch(domain:lrberge.github.io)",
+      "Bash(/tmp/check_inf.R:*)",
+      "Bash(Rscript /tmp/check_inf.R)"
     ]
   }
 }

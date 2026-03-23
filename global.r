@@ -706,22 +706,32 @@ create_event_level_plot <- function(models, input) {
   coef_data <- data.frame()
 
   # Helper: cumulate FD coefficients to get level estimates
+  # FD_coef(k) = Level(k) - Level(k-1), so:
+  #   Level(k) = Level(k-1) + FD_coef(k)     [forward from ref]
+  #   Level(k) = Level(k+1) - FD_coef(k+1)   [backward from ref]
   cumulate_fd <- function(ct_df) {
     df <- ct_df %>% arrange(event_time)
     # Insert reference period t = -1 with 0
     df <- bind_rows(data.frame(event_time = -1, estimate = 0, se = 0), df) %>%
       arrange(event_time)
     ref_idx <- which(df$event_time == -1)
-    # Forward cumulation (t >= 0): Level(k) = sum of FD(0..k)
+
+    # Store original FD coefficients (needed for backward pass)
+    fd_est <- df$estimate
+    fd_se  <- df$se
+
+    # Forward cumulation (t >= 0): Level(k) = Level(k-1) + FD(k)
     if (ref_idx < nrow(df)) {
       for (i in (ref_idx + 1):nrow(df)) {
-        df$estimate[i] <- df$estimate[i] + df$estimate[i - 1]
+        df$estimate[i] <- df$estimate[i - 1] + fd_est[i]
+        df$se[i] <- sqrt(df$se[i - 1]^2 + fd_se[i]^2)
       }
     }
     # Backward cumulation (t <= -2): Level(k) = Level(k+1) - FD(k+1)
     if (ref_idx > 1) {
       for (i in (ref_idx - 1):1) {
-        df$estimate[i] <- df$estimate[i + 1] - df$estimate[i]
+        df$estimate[i] <- df$estimate[i + 1] - fd_est[i + 1]
+        df$se[i] <- sqrt(df$se[i + 1]^2 + fd_se[i + 1]^2)
       }
     }
     df %>% filter(event_time != -1)
